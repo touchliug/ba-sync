@@ -1,0 +1,50 @@
+# ============================================================
+# ba-sync — 币安数据同步服务配置 (只写MySQL, 不做分析)
+# ============================================================
+
+server:
+  port: 8081
+
+spring:
+  datasource:
+    # 实际部署地址; 本地开发连远程库时直接用这个IP。
+    url: jdbc:mysql://192.168.193.128:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    username: root
+    password: Kzfx8N78@123456
+    driver-class-name: com.mysql.cj.jdbc.Driver
+    hikari:
+      maximum-pool-size: 10
+      minimum-idle: 2
+
+binance:
+  base-url: https://fapi.binance.com
+
+  proxy:
+    enabled: false    # 部署VPS可直连币安; 本地开发需走代理时改回 true
+    host: 127.0.0.1
+    port: 7897
+
+  concurrency:
+    max-requests: 10
+    request-interval-ms: 100
+    history-buffer-days: 30
+    task-timeout-seconds: 120
+
+  symbol:
+    file-path: ./data/symbols.json
+
+  # SyncScheduler 仅读取 short-term-rise 的 interval/period 决定分钟K线同步窗口。
+  analysis:
+    short-term-rise:
+      enabled: true
+      interval: 5m
+      period: 6
+
+  schedule:
+    # JVM 固定 Asia/Shanghai 运行 (见 SyncApplication)。以下 cron 均为北京时间。
+    symbol-update: "0 0 6 * * ?"
+    daily-kline-sync: "0 37 * * * ?"
+    short-term-sync: "0 */5 * * * ?"
+    # 每日同步日线OI (北京时间8:20, UTC零点已过, 币安当日1d点已生成)。
+    # upsert+永不删除 → 日线OI序列随时间无限累积, 突破币安openInterestHist的30天上限。
+    daily-oi-sync: "0 20 8 * * ?"

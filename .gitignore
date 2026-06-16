@@ -1,0 +1,11 @@
+target/
+.idea/
+*.iml
+.superpowers/
+.claude/
+.vscode/
+result.json
+data/analyzer.db
+reports/
+__pycache__/
+*.pyc
