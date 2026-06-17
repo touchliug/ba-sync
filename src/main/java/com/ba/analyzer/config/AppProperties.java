@@ -22,6 +22,41 @@ public class AppProperties {
     private AnalysisConfig analysis = new AnalysisConfig();
     private ScheduleConfig schedule = new ScheduleConfig();
     private ReportConfig report = new ReportConfig();
+    private InitConfig init = new InitConfig();
+
+    @Data
+    public static class InitConfig {
+        /** 启动时是否执行数据完整性校验与补齐。 */
+        private boolean enabled = true;
+        private DailyInit daily = new DailyInit();
+        private IntradayInit intraday = new IntradayInit();
+    }
+
+    @Data
+    public static class DailyInit {
+        /** 日线级(日K/日线OI/资金费率)校验窗口天数。 */
+        @Min(1)
+        private int days = 30;
+        /**
+         * 容差天数: 实际记录数 >= (days - tolerance) 即视为完整, 不补。
+         * 吸收 UTC 日界对齐 / 资金费率结算时点抖动等边界误差, 避免对老币重复全量补拉。
+         */
+        @Min(0)
+        private int toleranceDays = 2;
+    }
+
+    @Data
+    public static class IntradayInit {
+        /** 日内(5m K / 5m OI)校验窗口小时数。 */
+        @Min(1)
+        private int hours = 48;
+        /**
+         * 完整度阈值: 实际记录数 / 期望记录数 >= 此值即视为完整。
+         * 5m 窗口期望根数大, 按比例容忍低流动性币的零星缺口(默认98% → 48h容忍约11根)。
+         */
+        @Min(0) @Max(1)
+        private double completeness = 0.98;
+    }
 
     @Data
     public static class ProxyConfig {
@@ -244,7 +279,6 @@ public class AppProperties {
         private String symbolUpdate = "0 0 6 * * ?";
         private String dailyAnalysis = "0 5 8 * * ?";
         private String shortTermAnalysis = "0 */10 * * * ?";
-        private String dailyKlineSync = "0 37 * * * ?";
         private String dailyOiSync = "0 20 8 * * ?";
     }
 

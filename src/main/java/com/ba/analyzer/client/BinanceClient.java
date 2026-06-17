@@ -141,6 +141,42 @@ public class BinanceClient {
         }
     }
 
+    /**
+     * 分页拉取 OI 历史 [startMs, endMs]。币安 openInterestHist 单次上限 500,
+     * 故按时间窗向后翻页直到覆盖整个区间或拿不到更多数据。仅 5m/15m 等短周期补数据用得到。
+     */
+    public List<OpenInterestData> getOpenInterestHistoryRange(String symbol, String period, long startMs, long endMs) {
+        long periodMs = periodToMillis(period);
+        List<OpenInterestData> all = new ArrayList<>();
+        long cursor = startMs;
+        // 最多翻 50 页作为失控保护 (50*500=25000 点, 远超任何合理窗口)。
+        for (int page = 0; page < 50 && cursor <= endMs; page++) {
+            String url = UriComponentsBuilder.fromHttpUrl(appProperties.getBaseUrl())
+                    .path("/futures/data/openInterestHist")
+                    .queryParam("symbol", symbol)
+                    .queryParam("period", period)
+                    .queryParam("limit", 500)
+                    .queryParam("startTime", cursor)
+                    .queryParam("endTime", endMs)
+                    .build().toUriString();
+            String json = executeRequest(url);
+            if (json.isEmpty()) break;
+            List<OpenInterestData> batch;
+            try {
+                batch = objectMapper.readValue(json, new TypeReference<List<OpenInterestData>>() {});
+            } catch (JsonProcessingException e) {
+                log.error("Failed to parse OI history range for symbol: {}", symbol, e);
+                break;
+            }
+            if (batch.isEmpty()) break;
+            all.addAll(batch);
+            long lastTs = batch.get(batch.size() - 1).getTimestamp();
+            if (batch.size() < 500) break;          // 不足一页 → 已到区间末尾
+            cursor = lastTs + periodMs;              // 下一页从最后一点之后开始
+        }
+        return all;
+    }
+
     public List<FundingRateData> getFundingRates(String symbol, int limit) {
         String url = UriComponentsBuilder.fromHttpUrl(appProperties.getBaseUrl())
                 .path("/fapi/v1/fundingRate")
@@ -250,5 +286,20 @@ public class BinanceClient {
     private int toInt(Object obj) {
         if (obj instanceof Number) return ((Number) obj).intValue();
         return Integer.parseInt(obj.toString());
+    }
+
+    private long periodToMillis(String period) {
+        return switch (period) {
+            case "5m" -> 300_000L;
+            case "15m" -> 900_000L;
+            case "30m" -> 1_800_000L;
+            case "1h" -> 3_600_000L;
+            case "2h" -> 7_200_000L;
+            case "4h" -> 14_400_000L;
+            case "6h" -> 21_600_000L;
+            case "12h" -> 43_200_000L;
+            case "1d" -> 86_400_000L;
+            default -> 300_000L;
+        };
     }
 }

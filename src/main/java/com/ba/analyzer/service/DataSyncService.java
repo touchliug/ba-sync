@@ -104,24 +104,50 @@ public class DataSyncService {
         fetchOiHistoryByPeriod(symbols, "5m", limit);
     }
 
-    public void preloadDailyKlines(List<String> symbols, int maxDays) {
-        Map<String, List<KlineData>> stored = dataStore.getKlinesBatch(symbols, "1d", maxDays);
-        if (stored.size() >= symbols.size() * 0.9) {
-            log.info("Preload skipped, DB has daily klines for {} symbols", stored.size());
-            return;
-        }
-        log.info("Preloading daily klines for {} symbols, {} days", symbols.size(), maxDays);
-        fetchDailyKlines(symbols, maxDays);
+    // ======================== 强制补数据 (供启动校验, 跳过命中率/新鲜度启发式) ========================
+
+    /** 对指定的(缺数据)symbol 强制从币安拉取 K 线并写回, 不做任何 DB 命中判断。 */
+    public void backfillKlines(List<String> symbols, String interval, int limit) {
+        if (symbols.isEmpty()) return;
+        log.info("Backfilling {} klines for {} symbols, {} periods", interval, symbols.size(), limit);
+        binanceClient.executeConcurrent(symbols, symbol -> {
+            List<KlineData> klines = binanceClient.getKlines(symbol, interval, limit);
+            if (!klines.isEmpty()) dataStore.saveKlines(symbol, interval, klines);
+            return symbol;
+        });
     }
 
-    public void preloadHourlyKlines(List<String> symbols, int maxHours) {
-        Map<String, List<KlineData>> stored = dataStore.getKlinesBatch(symbols, "1h", maxHours);
-        if (stored.size() >= symbols.size() * 0.9) {
-            log.info("Preload skipped, DB has hourly klines for {} symbols", stored.size());
-            return;
-        }
-        log.info("Preloading hourly klines for {} symbols, {} hours", symbols.size(), maxHours);
-        fetchKlinesByInterval(symbols, "1h", maxHours);
+    /** 对指定的(缺数据)symbol 强制拉取 OI 历史并写回。 */
+    public void backfillOi(List<String> symbols, String period, int limit) {
+        if (symbols.isEmpty()) return;
+        log.info("Backfilling {} OI for {} symbols, {} periods", period, symbols.size(), limit);
+        binanceClient.executeConcurrent(symbols, symbol -> {
+            List<OpenInterestData> oi = binanceClient.getOpenInterestHistory(symbol, period, limit);
+            if (!oi.isEmpty()) dataStore.saveOpenInterest(symbol, period, oi);
+            return symbol;
+        });
+    }
+
+    /** 对指定的(缺数据)symbol 按时间区间分页拉取 OI 并写回 (用于 5m 等单次拉不满的短周期)。 */
+    public void backfillOiRange(List<String> symbols, String period, long startMs, long endMs) {
+        if (symbols.isEmpty()) return;
+        log.info("Backfilling {} OI (paged) for {} symbols, window [{}, {}]", period, symbols.size(), startMs, endMs);
+        binanceClient.executeConcurrent(symbols, symbol -> {
+            List<OpenInterestData> oi = binanceClient.getOpenInterestHistoryRange(symbol, period, startMs, endMs);
+            if (!oi.isEmpty()) dataStore.saveOpenInterest(symbol, period, oi);
+            return symbol;
+        });
+    }
+
+    /** 对指定的(缺数据)symbol 强制拉取资金费率并写回。 */
+    public void backfillFundingRates(List<String> symbols, int limit) {
+        if (symbols.isEmpty()) return;
+        log.info("Backfilling funding rates for {} symbols, {} periods", symbols.size(), limit);
+        binanceClient.executeConcurrent(symbols, symbol -> {
+            var rates = binanceClient.getFundingRates(symbol, limit);
+            if (!rates.isEmpty()) dataStore.saveFundingRates(symbol, rates);
+            return symbol;
+        });
     }
 
     private boolean isOiFresh(Map<String, List<OpenInterestData>> stored, String period) {

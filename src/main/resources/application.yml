@@ -20,7 +20,7 @@ binance:
   base-url: https://fapi.binance.com
 
   proxy:
-    enabled: false    # 部署VPS可直连币安; 本地开发需走代理时改回 true
+    enabled: true    # 部署VPS可直连币安; 本地开发需走代理时改回 true
     host: 127.0.0.1
     port: 7897
 
@@ -29,6 +29,16 @@ binance:
     request-interval-ms: 100
     history-buffer-days: 30
     task-timeout-seconds: 120
+
+  # 启动数据完整性校验: 系统就绪后逐 symbol 比对记录数, 缺则补齐。
+  init:
+    enabled: true
+    daily:                 # 日线级: 日K / 日线OI / 资金费率 (币安原生UTC日界)
+      days: 30
+      tolerance-days: 2    # 记录数 >= days-tolerance 视为完整, 吸收日界/结算时点抖动
+    intraday:              # 日内级: 5m K / 5m OI
+      hours: 48
+      completeness: 0.98   # 实际/期望 >= 0.98 视为完整 (48h≈576根, 容忍约11根零星缺口)
 
   symbol:
     file-path: ./data/symbols.json
@@ -43,7 +53,7 @@ binance:
   schedule:
     # JVM 固定 Asia/Shanghai 运行 (见 SyncApplication)。以下 cron 均为北京时间。
     symbol-update: "0 0 6 * * ?"
-    daily-kline-sync: "0 37 * * * ?"
+    # short-term-sync 每5分钟已刷新日K(含当天动态那根), 故不再单设每小时 daily-kline-sync。
     short-term-sync: "0 */5 * * * ?"
     # 每日同步日线OI (北京时间8:20, UTC零点已过, 币安当日1d点已生成)。
     # upsert+永不删除 → 日线OI序列随时间无限累积, 突破币安openInterestHist的30天上限。

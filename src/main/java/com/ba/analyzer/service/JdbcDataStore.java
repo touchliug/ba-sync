@@ -6,6 +6,7 @@ import com.ba.analyzer.model.OpenInterestData;
 import jakarta.annotation.PostConstruct;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowCallbackHandler;
 import org.springframework.stereotype.Service;
 
 import java.sql.ResultSet;
@@ -215,6 +216,32 @@ public class JdbcDataStore {
             fr.setFundingRate(rs.getString("funding_rate"));
             return fr;
         }, symbol, limit);
+    }
+
+    // ======================== Coverage counts (供启动补数据校验) ========================
+
+    /** 统计每个 symbol 在 [sinceMs, now] 窗口内的 K 线根数 (interval 粒度)。缺数据的 symbol 不出现在结果中。 */
+    public Map<String, Integer> countKlinesSince(String interval, long sinceMs) {
+        Map<String, Integer> counts = new HashMap<>();
+        jdbc.query("SELECT symbol, COUNT(*) c FROM klines WHERE `interval`=? AND open_time >= ? GROUP BY symbol",
+                (RowCallbackHandler) rs -> counts.put(rs.getString("symbol"), rs.getInt("c")), interval, sinceMs);
+        return counts;
+    }
+
+    /** 统计每个 symbol 在 [sinceMs, now] 窗口内的 OI 数据点数 (period 粒度)。 */
+    public Map<String, Integer> countOpenInterestSince(String period, long sinceMs) {
+        Map<String, Integer> counts = new HashMap<>();
+        jdbc.query("SELECT symbol, COUNT(*) c FROM open_interest WHERE period=? AND `timestamp` >= ? GROUP BY symbol",
+                (RowCallbackHandler) rs -> counts.put(rs.getString("symbol"), rs.getInt("c")), period, sinceMs);
+        return counts;
+    }
+
+    /** 统计每个 symbol 在 [sinceMs, now] 窗口内的资金费率条数。 */
+    public Map<String, Integer> countFundingRatesSince(long sinceMs) {
+        Map<String, Integer> counts = new HashMap<>();
+        jdbc.query("SELECT symbol, COUNT(*) c FROM funding_rate WHERE funding_time >= ? GROUP BY symbol",
+                (RowCallbackHandler) rs -> counts.put(rs.getString("symbol"), rs.getInt("c")), sinceMs);
+        return counts;
     }
 
     // ======================== Row Mappers ========================

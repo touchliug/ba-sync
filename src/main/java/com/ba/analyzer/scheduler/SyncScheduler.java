@@ -3,7 +3,6 @@ package com.ba.analyzer.scheduler;
 import com.ba.analyzer.config.AppProperties;
 import com.ba.analyzer.service.DataSyncService;
 import com.ba.analyzer.service.SymbolService;
-import jakarta.annotation.PostConstruct;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -16,11 +15,10 @@ import java.util.List;
  *
  * 只负责把币安数据拉进MySQL, 不做任何分析。各任务cron集中在 application.yml 的 binance.schedule.*:
  * - symbol-update    : 更新USDT永续合约列表
- * - daily-kline-sync : 每小时同步日K线
- * - short-term-sync  : 每5分钟刷新日K/5m K/5m OI/资金费率 (供分析服务读取)
+ * - short-term-sync  : 每5分钟刷新日K/5m K/5m OI/资金费率 (供分析服务读取; 日K含当天动态那根)
  * - daily-oi-sync    : 每日同步日线OI (upsert永不删除 → 长期累积, 突破币安30天上限)
  *
- * 启动时 @PostConstruct 预加载日K线及短期所需分钟K线。
+ * 启动时的数据预加载/补齐已统一由 DataInitializer(ApplicationReadyEvent)负责, 本类不再做 @PostConstruct 预加载。
  */
 @Slf4j
 @Component
@@ -33,38 +31,9 @@ public class SyncScheduler {
 
     /** 5m OI拉取周期数: 288根=24h, 取300留余量以覆盖24h窗口。 */
     private static final int INTRADAY_OI_PERIODS = 300;
-    /** 日K线预加载/同步天数: 取分析侧最大窗口的保守上限 + history buffer。 */
-    private static final int DAILY_DAYS_BASE = 120;
 
     private volatile List<String> cachedSymbols = List.of();
     private final Object symbolsLock = new Object();
-
-    @PostConstruct
-    public void init() {
-        List<String> symbols = getSymbols();
-        int maxDays = dailyDays();
-        log.info("Preloading daily klines for {} symbols, {} days", symbols.size(), maxDays);
-        dataSyncService.preloadDailyKlines(symbols, maxDays);
-
-        var stCfg = appProperties.getAnalysis().getShortTermRise();
-        if (stCfg.isEnabled()) {
-            int shortPeriod = stCfg.getPeriod() + appProperties.getConcurrency().getHistoryBufferDays();
-            log.info("Preloading {} klines for {} symbols, {} periods", stCfg.getInterval(), symbols.size(), shortPeriod);
-            dataSyncService.fetchKlinesByInterval(symbols, stCfg.getInterval(), shortPeriod);
-        }
-    }
-
-    @Scheduled(cron = "${binance.schedule.daily-kline-sync}")
-    public void syncDailyKlines() {
-        try {
-            List<String> symbols = getSymbols();
-            int days = dailyDays();
-            log.info("Hourly daily kline sync: {} symbols, {} days", symbols.size(), days);
-            dataSyncService.fetchDailyKlines(symbols, days);
-        } catch (Exception e) {
-            log.error("Hourly kline sync failed", e);
-        }
-    }
 
     @Scheduled(cron = "${binance.schedule.daily-oi-sync}")
     public void syncDailyOi() {
@@ -113,7 +82,16 @@ public class SyncScheduler {
     }
 
     private int dailyDays() {
-        return DAILY_DAYS_BASE + appProperties.getConcurrency().getHistoryBufferDays();
+        return appProperties.getInit().getDaily().getDays();
+    }
+
+    /** 用最新合约列表覆盖内存缓存。供 DataInitializer 启动同步合约后调用, 避免运行期任务沿用启动时的旧列表。 */
+    public void updateCachedSymbols(List<String> symbols) {
+        if (symbols == null || symbols.isEmpty()) return;
+        synchronized (symbolsLock) {
+            cachedSymbols = symbols;
+        }
+        log.info("SyncScheduler symbol cache refreshed: {} symbols", symbols.size());
     }
 
     private List<String> getSymbols() {
