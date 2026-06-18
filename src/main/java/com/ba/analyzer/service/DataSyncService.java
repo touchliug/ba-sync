@@ -61,6 +61,23 @@ public class DataSyncService {
         return result;
     }
 
+    /**
+     * 强制刷新"当天/当前未收盘那根"K线, 跳过 fetchKlinesByInterval 的 DB 新鲜度判断。
+     *
+     * 背景: fetchKlinesByInterval 的命中条件 now - latestOpenTime < intervalMs*2 会把当天动态根
+     * 也判成"够新→走缓存", 导致它在收盘前不被API刷新。下游需要当天实时K线, 故对最新2根
+     * (上一根已收盘 + 当前动态根)做轻量强制拉取并 upsert 覆盖。每币种仅拉2根, 权重很低。
+     */
+    public void refreshCurrentKline(List<String> symbols, String interval) {
+        if (symbols == null || symbols.isEmpty()) return;
+        log.info("Refreshing current {} kline (last 2) for {} symbols", interval, symbols.size());
+        binanceClient.executeConcurrent(symbols, symbol -> {
+            List<KlineData> klines = binanceClient.getKlines(symbol, interval, 2);
+            if (!klines.isEmpty()) dataStore.saveKlines(symbol, interval, klines);
+            return symbol;
+        });
+    }
+
     public void syncFundingRates(List<String> symbols) {
         log.info("Syncing funding rates for {} symbols", symbols.size());
         binanceClient.executeConcurrent(symbols, symbol -> {
