@@ -68,10 +68,14 @@ public class SyncScheduler {
             List<String> symbols = getSymbols();
             int days = dailyDays();
             dataSyncService.fetchDailyKlines(symbols, days);
+            // 历史序列走缓存省配额, 但当天日线那根是动态的: 强制刷新最新2根, 保证下游拿到实时值。
+            dataSyncService.refreshCurrentKline(symbols, "1d");
             var stCfg = appProperties.getAnalysis().getShortTermRise();
             if (stCfg.isEnabled()) {
                 int shortPeriod = stCfg.getPeriod() + appProperties.getConcurrency().getHistoryBufferDays();
                 dataSyncService.fetchKlinesByInterval(symbols, stCfg.getInterval(), shortPeriod);
+                // 短期K线同理: 强制刷新当前未收盘那根。
+                dataSyncService.refreshCurrentKline(symbols, stCfg.getInterval());
             }
             dataSyncService.syncIntradayOi(symbols, INTRADAY_OI_PERIODS);
             dataSyncService.syncFundingRates(symbols);

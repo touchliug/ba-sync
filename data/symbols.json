@@ -183,7 +183,7 @@
   "status" : "TRADING",
   "baseAsset" : "ONT",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 4,
+  "pricePrecision" : 6,
   "quantityPrecision" : 1
 }, {
   "symbol" : "IOTAUSDT",
@@ -194,7 +194,7 @@
   "status" : "TRADING",
   "baseAsset" : "IOTA",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 4,
+  "pricePrecision" : 6,
   "quantityPrecision" : 1
 }, {
   "symbol" : "BATUSDT",
@@ -282,7 +282,7 @@
   "status" : "TRADING",
   "baseAsset" : "ZIL",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 5,
+  "pricePrecision" : 7,
   "quantityPrecision" : 0
 }, {
   "symbol" : "KNCUSDT",
@@ -337,7 +337,7 @@
   "status" : "TRADING",
   "baseAsset" : "KAVA",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 4,
+  "pricePrecision" : 6,
   "quantityPrecision" : 1
 }, {
   "symbol" : "BANDUSDT",
@@ -612,7 +612,7 @@
   "status" : "TRADING",
   "baseAsset" : "SKL",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 5,
+  "pricePrecision" : 7,
   "quantityPrecision" : 0
 }, {
   "symbol" : "GRTUSDT",
@@ -678,7 +678,7 @@
   "status" : "TRADING",
   "baseAsset" : "RVN",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 5,
+  "pricePrecision" : 7,
   "quantityPrecision" : 0
 }, {
   "symbol" : "SFPUSDT",
@@ -777,7 +777,7 @@
   "status" : "TRADING",
   "baseAsset" : "HOT",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 6,
+  "pricePrecision" : 7,
   "quantityPrecision" : 0
 }, {
   "symbol" : "MTLUSDT",
@@ -843,7 +843,7 @@
   "status" : "TRADING",
   "baseAsset" : "IOTX",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 5,
+  "pricePrecision" : 7,
   "quantityPrecision" : 0
 }, {
   "symbol" : "C98USDT",
@@ -887,7 +887,7 @@
   "status" : "TRADING",
   "baseAsset" : "1000XEC",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 5,
+  "pricePrecision" : 7,
   "quantityPrecision" : 0
 }, {
   "symbol" : "GALAUSDT",
@@ -975,7 +975,7 @@
   "status" : "TRADING",
   "baseAsset" : "PEOPLE",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 5,
+  "pricePrecision" : 7,
   "quantityPrecision" : 0
 }, {
   "symbol" : "ROSEUSDT",
@@ -986,7 +986,7 @@
   "status" : "TRADING",
   "baseAsset" : "ROSE",
   "quoteAsset" : "USDT",
-  "pricePrecision" : 5,
+  "pricePrecision" : 7,
   "quantityPrecision" : 0
 }, {
   "symbol" : "DUSKUSDT",
@@ -1219,17 +1219,6 @@
   "quoteAsset" : "USDT",
   "pricePrecision" : 7,
   "quantityPrecision" : 0
-}, {
-  "symbol" : "HIGHUSDT",
-  "pair" : "HIGHUSDT",
-  "contractType" : "PERPETUAL",
-  "deliveryDate" : 1781168400000,
-  "onboardDate" : 1675407600000,
-  "status" : "TRADING",
-  "baseAsset" : "HIGH",
-  "quoteAsset" : "USDT",
-  "pricePrecision" : 6,
-  "quantityPrecision" : 1
 }, {
   "symbol" : "MINAUSDT",
   "pair" : "MINAUSDT",
@@ -2103,7 +2092,7 @@
   "symbol" : "TONUSDT",
   "pair" : "TONUSDT",
   "contractType" : "PERPETUAL",
-  "deliveryDate" : 4133404800000,
+  "deliveryDate" : 1782205200000,
   "onboardDate" : 1709296200000,
   "status" : "TRADING",
   "baseAsset" : "TON",
@@ -2430,17 +2419,6 @@
   "pricePrecision" : 8,
   "quantityPrecision" : 0
 }, {
-  "symbol" : "MBOXUSDT",
-  "pair" : "MBOXUSDT",
-  "contractType" : "PERPETUAL",
-  "deliveryDate" : 1781168400000,
-  "onboardDate" : 1724837400000,
-  "status" : "TRADING",
-  "baseAsset" : "MBOX",
-  "quoteAsset" : "USDT",
-  "pricePrecision" : 7,
-  "quantityPrecision" : 0
-}, {
   "symbol" : "FLUXUSDT",
   "pair" : "FLUXUSDT",
   "contractType" : "PERPETUAL",
@@ -2525,17 +2503,6 @@
   "onboardDate" : 1727353800000,
   "status" : "TRADING",
   "baseAsset" : "HMSTR",
-  "quoteAsset" : "USDT",
-  "pricePrecision" : 7,
-  "quantityPrecision" : 0
-}, {
-  "symbol" : "COSUSDT",
-  "pair" : "COSUSDT",
-  "contractType" : "PERPETUAL",
-  "deliveryDate" : 1781168400000,
-  "onboardDate" : 1727701200000,
-  "status" : "TRADING",
-  "baseAsset" : "COS",
   "quoteAsset" : "USDT",
   "pricePrecision" : 7,
   "quantityPrecision" : 0
@@ -3122,17 +3089,6 @@
   "quoteAsset" : "USDT",
   "pricePrecision" : 7,
   "quantityPrecision" : 1
-}, {
-  "symbol" : "DUSDT",
-  "pair" : "DUSDT",
-  "contractType" : "PERPETUAL",
-  "deliveryDate" : 1781168400000,
-  "onboardDate" : 1736416800000,
-  "status" : "TRADING",
-  "baseAsset" : "D",
-  "quoteAsset" : "USDT",
-  "pricePrecision" : 7,
-  "quantityPrecision" : 0
 }, {
   "symbol" : "PROMUSDT",
   "pair" : "PROMUSDT",

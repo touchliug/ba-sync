@@ -22,7 +22,7 @@ binance:
   proxy:
     enabled: true    # 部署VPS可直连币安; 本地开发需走代理时改回 true
     host: 127.0.0.1
-    port: 7897
+    port: 7890
 
   concurrency:
     max-requests: 10
@@ -54,7 +54,7 @@ binance:
     # JVM 固定 Asia/Shanghai 运行 (见 SyncApplication)。以下 cron 均为北京时间。
     symbol-update: "0 0 6 * * ?"
     # short-term-sync 每5分钟已刷新日K(含当天动态那根), 故不再单设每小时 daily-kline-sync。
-    short-term-sync: "0 */5 * * * ?"
+    short-term-sync: "0 */3 * * * ?"
     # 每日同步日线OI (北京时间8:20, UTC零点已过, 币安当日1d点已生成)。
     # upsert+永不删除 → 日线OI序列随时间无限累积, 突破币安openInterestHist的30天上限。
-    daily-oi-sync: "0 20 8 * * ?"
+    daily-oi-sync: "0 10 8 * * ?"
