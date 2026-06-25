@@ -8,7 +8,8 @@ server:
 spring:
   datasource:
     # 实际部署地址; 本地开发连远程库时直接用这个IP。
-    url: jdbc:mysql://192.168.193.128:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    # url: jdbc:mysql://43.155.216.33:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    url: jdbc:mysql://127.0.0.1:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
     username: root
     password: Kzfx8N78@123456
     driver-class-name: com.mysql.cj.jdbc.Driver
@@ -20,7 +21,7 @@ binance:
   base-url: https://fapi.binance.com
 
   proxy:
-    enabled: true    # 部署VPS可直连币安; 本地开发需走代理时改回 true
+    enabled: false    # 部署VPS可直连币安; 本地开发需走代理时改回 true
     host: 127.0.0.1
     port: 7890
 
