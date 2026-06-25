@@ -18,14 +18,15 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.util.UriComponentsBuilder;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
-import java.util.Objects;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.function.Function;
 
 /**
@@ -221,17 +222,19 @@ public class BinanceClient {
             futures.add(future);
         }
 
-        return futures.stream()
-                .map(f -> {
-                    try {
-                        return f.get(timeoutSeconds, TimeUnit.SECONDS);
-                    } catch (Exception e) {
-                        log.error("Concurrent task failed", e);
-                        return null;
-                    }
-                })
-                .filter(Objects::nonNull)
-                .toList();
+        List<T> results = new ArrayList<>(futures.size());
+        for (int i = 0; i < futures.size(); i++) {
+            try {
+                T result = futures.get(i).get(timeoutSeconds, TimeUnit.SECONDS);
+                if (result != null) results.add(result);
+            } catch (TimeoutException e) {
+                // 打印具体 symbol: 便于判断是否总是同一个合约在卡 (固定卡 → 可能已下架/异常, 需单独处理)。
+                log.error("Concurrent task timed out for symbol: {}", symbols.get(i));
+            } catch (Exception e) {
+                log.error("Concurrent task failed for symbol: {}", symbols.get(i), e);
+            }
+        }
+        return results;
     }
 
     private String executeRequest(String url) {
@@ -258,6 +261,11 @@ public class BinanceClient {
                     return "";
                 }
                 return response.body().string();
+            } catch (InterruptedIOException e) {
+                // 超时类 (connect/read/call timeout): 不重试。重试会把单 symbol 耗时叠加到
+                // maxRetries×callTimeout, 突破 executeConcurrent 的 120s 预算并拖死整轮。快速失败返回空。
+                log.warn("Request timed out, no retry: {}", url);
+                return "";
             } catch (IOException e) {
                 if (attempt < maxRetries) {
                     log.warn("Request error (attempt {}): {}", attempt + 1, url);
