@@ -24,6 +24,24 @@ class JdbcDataStoreTest {
     }
 
     @Test
+    void saveAndGetSymbols_roundTrip() {
+        jdbc.execute("DELETE FROM symbols WHERE symbol='TESTUSDT'");
+        com.ba.analyzer.model.SymbolInfo s = new com.ba.analyzer.model.SymbolInfo();
+        s.setSymbol("TESTUSDT");
+        s.setContractType("PERPETUAL");
+        s.setStatus("TRADING");
+        s.setQuoteAsset("USDT");
+        s.setOnboardDate(1600000000000L);
+
+        store.saveSymbols(java.util.List.of(s));
+        java.util.List<com.ba.analyzer.model.SymbolInfo> got = store.getSymbols();
+
+        assertThat(got).anyMatch(x -> "TESTUSDT".equals(x.getSymbol())
+                && "PERPETUAL".equals(x.getContractType())
+                && x.getOnboardDate() == 1600000000000L);
+    }
+
+    @Test
     void saveAndGetKlines_roundTrip() {
         // 用 no-arg + setter: KlineData 的 @AllArgsConstructor 还含 6 个 transient 缓存字段, 不用它。
         KlineData k = new KlineData();

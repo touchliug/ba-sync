@@ -234,6 +234,47 @@ public class JdbcDataStore {
         }, symbol, limit);
     }
 
+    // ======================== Symbols CRUD ========================
+
+    private static final String UPSERT_SYMBOL = """
+        INSERT INTO symbols (symbol, pair, contract_type, status, base_asset, quote_asset,
+            price_precision, quantity_precision, onboard_date, delivery_date, updated_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+        ON DUPLICATE KEY UPDATE pair=VALUES(pair), contract_type=VALUES(contract_type),
+            status=VALUES(status), base_asset=VALUES(base_asset), quote_asset=VALUES(quote_asset),
+            price_precision=VALUES(price_precision), quantity_precision=VALUES(quantity_precision),
+            onboard_date=VALUES(onboard_date), delivery_date=VALUES(delivery_date), updated_at=VALUES(updated_at)
+    """;
+
+    public void saveSymbols(List<com.ba.analyzer.model.SymbolInfo> symbols) {
+        if (symbols == null || symbols.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        List<Object[]> batch = new ArrayList<>();
+        for (com.ba.analyzer.model.SymbolInfo s : symbols) {
+            batch.add(new Object[]{s.getSymbol(), s.getPair(), s.getContractType(), s.getStatus(),
+                    s.getBaseAsset(), s.getQuoteAsset(), s.getPricePrecision(), s.getQuantityPrecision(),
+                    s.getOnboardDate(), s.getDeliveryDate(), now});
+        }
+        jdbc.batchUpdate(UPSERT_SYMBOL, batch);
+    }
+
+    public List<com.ba.analyzer.model.SymbolInfo> getSymbols() {
+        return jdbc.query("SELECT * FROM symbols", (rs, n) -> {
+            com.ba.analyzer.model.SymbolInfo s = new com.ba.analyzer.model.SymbolInfo();
+            s.setSymbol(rs.getString("symbol"));
+            s.setPair(rs.getString("pair"));
+            s.setContractType(rs.getString("contract_type"));
+            s.setStatus(rs.getString("status"));
+            s.setBaseAsset(rs.getString("base_asset"));
+            s.setQuoteAsset(rs.getString("quote_asset"));
+            s.setPricePrecision(rs.getInt("price_precision"));
+            s.setQuantityPrecision(rs.getInt("quantity_precision"));
+            s.setOnboardDate(rs.getLong("onboard_date"));
+            s.setDeliveryDate(rs.getLong("delivery_date"));
+            return s;
+        });
+    }
+
     // ======================== Coverage counts (供启动补数据校验) ========================
 
     /** 统计每个 symbol 在 [sinceMs, now] 窗口内的 K 线根数 (interval 粒度)。缺数据的 symbol 不出现在结果中。 */
