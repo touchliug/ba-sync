@@ -82,6 +82,15 @@ public class DataSyncService {
         });
     }
 
+    /** 拉全市场24h行情(单次批量)并 upsert 最新快照。 */
+    public void syncTickers() {
+        List<com.ba.analyzer.model.Ticker24h> tickers = binanceClient.get24hrTickers();
+        if (!tickers.isEmpty()) {
+            dataStore.saveTickers(tickers);
+            log.info("Synced {} 24h tickers", tickers.size());
+        }
+    }
+
     public void syncFundingRates(List<String> symbols) {
         log.info("Syncing funding rates for {} symbols", symbols.size());
         binanceClient.executeConcurrent(symbols, symbol -> {
