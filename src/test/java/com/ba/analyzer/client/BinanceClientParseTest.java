@@ -58,4 +58,18 @@ class BinanceClientParseTest {
 
         assertThat(klines).isEmpty();
     }
+
+    @Test
+    void get24hrTickers_parsesArray() {
+        server.enqueue(new MockResponse().setBody(
+                "[{\"symbol\":\"BTCUSDT\",\"priceChangePercent\":\"2.5\",\"lastPrice\":\"60000\"," +
+                "\"quoteVolume\":\"123\",\"openTime\":1,\"closeTime\":2,\"count\":9}]"));
+
+        var tickers = client.get24hrTickers();
+
+        assertThat(tickers).hasSize(1);
+        assertThat(tickers.get(0).getSymbol()).isEqualTo("BTCUSDT");
+        assertThat(tickers.get(0).getPriceChangePercent()).isEqualTo("2.5");
+        assertThat(tickers.get(0).getCount()).isEqualTo(9);
+    }
 }

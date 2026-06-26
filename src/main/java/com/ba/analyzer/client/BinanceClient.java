@@ -5,6 +5,7 @@ import com.ba.analyzer.model.FundingRateData;
 import com.ba.analyzer.model.KlineData;
 import com.ba.analyzer.model.OpenInterestData;
 import com.ba.analyzer.model.SymbolInfo;
+import com.ba.analyzer.model.Ticker24h;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -205,6 +206,19 @@ public class BinanceClient {
             return objectMapper.readValue(json, new TypeReference<List<FundingRateData>>() {});
         } catch (JsonProcessingException e) {
             log.error("Failed to parse funding rates for symbol: {}", symbol, e);
+            return Collections.emptyList();
+        }
+    }
+
+    public List<Ticker24h> get24hrTickers() {
+        String url = UriComponentsBuilder.fromHttpUrl(appProperties.getBaseUrl())
+                .path("/fapi/v1/ticker/24hr").build().toUriString();
+        String json = executeRequest(url);
+        if (json.isEmpty()) return Collections.emptyList();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<Ticker24h>>() {});
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse 24hr tickers", e);
             return Collections.emptyList();
         }
     }
