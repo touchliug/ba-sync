@@ -29,8 +29,10 @@ public class SyncScheduler {
     private final AppProperties appProperties;
     private final DataSyncService dataSyncService;
 
-    /** 5m OI拉取周期数: 288根=24h, 取300留余量以覆盖24h窗口。 */
-    private static final int INTRADAY_OI_PERIODS = 300;
+    /** 中短周期K线集合 (1d 在上面单独处理)。 */
+    private static final List<String> INTRADAY_INTERVALS = List.of("1h", "4h");
+    /** 1h/4h 历史缓存判定的回看根数 (30天 1h≈720; 取整 800 留余量, 仍 < 币安1500上限)。 */
+    private static final int KLINE_HISTORY_BARS = 800;
 
     private volatile List<String> cachedSymbols = List.of();
     private final Object symbolsLock = new Object();
@@ -75,14 +77,10 @@ public class SyncScheduler {
             dataSyncService.fetchDailyKlines(symbols, days);
             // 历史序列走缓存省配额, 但当天日线那根是动态的: 强制刷新最新2根, 保证下游拿到实时值。
             dataSyncService.refreshCurrentKline(symbols, "1d");
-            var stCfg = appProperties.getAnalysis().getShortTermRise();
-            if (stCfg.isEnabled()) {
-                int shortPeriod = stCfg.getPeriod() + appProperties.getConcurrency().getHistoryBufferDays();
-                dataSyncService.fetchKlinesByInterval(symbols, stCfg.getInterval(), shortPeriod);
-                // 短期K线同理: 强制刷新当前未收盘那根。
-                dataSyncService.refreshCurrentKline(symbols, stCfg.getInterval());
+            for (String interval : INTRADAY_INTERVALS) {
+                dataSyncService.fetchKlinesByInterval(symbols, interval, KLINE_HISTORY_BARS);
+                dataSyncService.refreshCurrentKline(symbols, interval);
             }
-            dataSyncService.syncIntradayOi(symbols, INTRADAY_OI_PERIODS);
             dataSyncService.syncFundingRates(symbols);
             dataSyncService.syncTickers();
             dataSyncService.syncPremiumIndex();
