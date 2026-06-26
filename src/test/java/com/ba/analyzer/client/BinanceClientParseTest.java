@@ -37,6 +37,17 @@ class BinanceClientParseTest {
     }
 
     @Test
+    void usedWeightHeader_isObserved() {
+        server.enqueue(new MockResponse()
+                .setHeader("X-MBX-USED-WEIGHT-1M", "1234")
+                .setBody("[]"));
+
+        client.getKlines("BTCUSDT", "1h", 1);
+
+        assertThat(client.currentUsedWeight()).isEqualTo(1234);
+    }
+
+    @Test
     void getKlines_parsesRawArray() {
         server.enqueue(new MockResponse().setBody(
                 "[[1700000000000,\"1.5\",\"2.0\",\"1.0\",\"1.8\",\"100\",1700000299999,\"180\",5,\"60\",\"108\"]]"));

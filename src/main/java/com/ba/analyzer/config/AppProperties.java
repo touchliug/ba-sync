@@ -68,6 +68,9 @@ public class AppProperties {
         private int historyBufferDays = 30;
         @Min(10)
         private int taskTimeoutSeconds = 120;
+        /** X-MBX-USED-WEIGHT-1M 软上限: 已用权重达此值即主动退避(币安/fapi上限2400/min, 留余量默认2000)。 */
+        @Min(1)
+        private int weightSoftLimit = 2000;
     }
 
     @Data

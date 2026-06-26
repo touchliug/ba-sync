@@ -30,6 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
@@ -52,6 +53,10 @@ public class BinanceClient {
     private final Semaphore semaphore;
     /** 全局限流冷却截止时刻(ms): 任一线程收到429/418后置位, 所有线程在该时刻前先等待。 */
     private final AtomicLong rateLimitedUntilMs = new AtomicLong(0);
+    /** 最近一次响应头 X-MBX-USED-WEIGHT-1M(过去1分钟已用权重), 用于主动节流 + 监控。 */
+    private final AtomicInteger usedWeight1m = new AtomicInteger(0);
+    /** 权重达软上限时单次主动退避时长(ms): 给滚动窗口衰减时间。 */
+    private static final long WEIGHT_THROTTLE_MS = 3000L;
 
     public BinanceClient(OkHttpClient httpClient, AppProperties appProperties,
                          ObjectMapper objectMapper, @Qualifier("httpExecutor") ExecutorService executorService) {
@@ -307,6 +312,7 @@ public class BinanceClient {
             awaitRateLimitCooldown();
             Request request = new Request.Builder().url(url).get().build();
             try (Response response = httpClient.newCall(request).execute()) {
+                observeUsedWeight(response);   // 读 X-MBX-USED-WEIGHT-1M, 接近软上限则主动退避
                 if (response.code() == 429 || response.code() == 418) {
                     // 优先用币安返回的 Retry-After(秒), 否则退避表; 置全局冷却让所有线程一起退。
                     long backoff = retryAfterMs(response, backoffMs[Math.min(attempt, backoffMs.length - 1)]);
@@ -374,6 +380,33 @@ public class BinanceClient {
             }
         }
         return fallbackMs;
+    }
+
+    /**
+     * 读响应头 X-MBX-USED-WEIGHT-1M(/fapi 权重桶, 币安上限2400/min): 已用权重达软上限时,
+     * 主动把全局冷却顶到 now+WEIGHT_THROTTLE_MS, 让所有线程一起短暂退避, 在撞 429 之前降速。
+     * (/futures/data 计次桶不返回此头, 仍靠 429 反应式冷却兜底。)
+     */
+    private void observeUsedWeight(Response response) {
+        String h = response.header("X-MBX-USED-WEIGHT-1M");
+        if (h == null) return;
+        try {
+            int w = Integer.parseInt(h.trim());
+            usedWeight1m.set(w);
+            int soft = appProperties.getConcurrency().getWeightSoftLimit();
+            if (w >= soft) {
+                long until = System.currentTimeMillis() + WEIGHT_THROTTLE_MS;
+                rateLimitedUntilMs.updateAndGet(prev -> Math.max(prev, until));
+                log.warn("Used weight {} >= soft limit {}, throttling all requests {}ms", w, soft, WEIGHT_THROTTLE_MS);
+            }
+        } catch (NumberFormatException ignored) {
+            // 头不是数字, 忽略
+        }
+    }
+
+    /** 最近一次观测到的 1 分钟已用权重(供测试/监控)。 */
+    int currentUsedWeight() {
+        return usedWeight1m.get();
     }
 
     private long toLong(Object obj) {
