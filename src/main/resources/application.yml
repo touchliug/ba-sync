@@ -38,19 +38,15 @@ binance:
     daily:                 # 日线级: 日K / 日线OI / 资金费率 (币安原生UTC日界)
       days: 30
       tolerance-days: 2    # 记录数 >= days-tolerance 视为完整, 吸收日界/结算时点抖动
-    intraday:              # 日内级: 5m K / 5m OI
-      hours: 48
-      completeness: 0.98   # 实际/期望 >= 0.98 视为完整 (48h≈576根, 容忍约11根零星缺口)
 
   symbol:
     file-path: ./data/symbols.json
 
-  # SyncScheduler 仅读取 short-term-rise 的 interval/period 决定分钟K线同步窗口。
-  analysis:
-    short-term-rise:
-      enabled: true
-      interval: 5m
-      period: 6
+  # 多空比采集配置 (4端点: 全市场账户/顶级账户/顶级持仓/Taker比率)
+  lsr:
+    enabled: true
+    period: 1h
+    limit: 30
 
   schedule:
     # JVM 固定 Asia/Shanghai 运行 (见 SyncApplication)。以下 cron 均为北京时间。

@@ -20,3 +20,15 @@ binance:
     enabled: false
     host: 127.0.0.1
     port: 7897
+
+  # 以下为可选覆盖示例, jar 内已有默认值, 按需取消注释并填入:
+
+  # 中频任务 cron (1h OI + 多空比, 默认每30分钟一轮):
+  # schedule:
+  #   mid-freq-sync: "0 */30 * * * ?"
+
+  # 多空比采集配置 (period/limit 均可覆盖):
+  # lsr:
+  #   enabled: true
+  #   period: 1h
+  #   limit: 30
