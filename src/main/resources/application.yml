@@ -7,11 +7,12 @@ server:
 
 spring:
   datasource:
-    # 实际部署地址; 本地开发连远程库时直接用这个IP。
-    # url: jdbc:mysql://43.155.216.33:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    # 环境相关项(url/username/password)请放到 jar 外的 config/application.yml 覆盖,
+    # 见 config/application.yml.example。此处仅留本地默认值; 密码默认空 → 必须由外部配置
+    # 或环境变量 DB_PASSWORD 提供, 避免明文密钥进 jar / git。
     url: jdbc:mysql://127.0.0.1:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
     username: root
-    password: Kzfx8N78@123456
+    password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver
     hikari:
       maximum-pool-size: 10

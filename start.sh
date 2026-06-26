@@ -21,7 +21,10 @@ start() {
   if [ ! -f "$jarpath" ]; then
     echo "找不到 $JAR — 先执行 mvn package -DskipTests。"; exit 1
   fi
-  nohup java $JAVA_OPTS -jar "$jarpath" > "$LOG" 2>&1 &
+  # 外部配置: jar 外的 ./config/application.yml 会逐项覆盖 jar 内打包的 application.yml
+  # (optional: 文件不存在也不报错)。改配置后重启即可, 无需重新打包。
+  nohup java $JAVA_OPTS -jar "$jarpath" \
+    --spring.config.additional-location=optional:file:./config/ > "$LOG" 2>&1 &
   sleep 1
   echo "ba-sync 已启动 (PID $(pid_of)). 日志: $LOG  (用 ./start.sh log 跟踪)"
 }

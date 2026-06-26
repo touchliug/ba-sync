@@ -7,5 +7,7 @@ target/
 result.json
 data/analyzer.db
 reports/
+# jar 外的真实环境配置(含DB密码), 只在部署机本地存在, 不进版本库; 模板见 config/application.yml.example
+/config/application.yml
 __pycache__/
 *.pyc
