@@ -65,6 +65,22 @@ public class JdbcDataStore {
                 INDEX idx_oi_lookup (symbol, period, `timestamp` DESC)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
+        jdbc.execute("""
+            CREATE TABLE IF NOT EXISTS symbols (
+                symbol VARCHAR(20) NOT NULL,
+                pair VARCHAR(20),
+                contract_type VARCHAR(20),
+                status VARCHAR(20),
+                base_asset VARCHAR(20),
+                quote_asset VARCHAR(20),
+                price_precision INT,
+                quantity_precision INT,
+                onboard_date BIGINT,
+                delivery_date BIGINT,
+                updated_at BIGINT,
+                PRIMARY KEY (symbol)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """);
         migrateOpenInterestPeriod();
         log.info("MySQL tables ready");
     }
