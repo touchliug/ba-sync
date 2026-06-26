@@ -40,8 +40,11 @@ public class SyncScheduler {
         try {
             List<String> symbols = getSymbols();
             // 30 = 币安 openInterestHist?period=1d 单次最大返回天数; upsert 永不删除 → 序列累积。
+            // 用 backfillOi(无条件拉) 而非 fetchOiHistoryByPeriod: 后者带3天新鲜度门槛, 稳态下会
+            // 把"今天的00:00快照"判成够新而跳过, 导致最新日OI点滞后1~3天。本任务一天仅一次、幂等,
+            // 无需省配额, 每天直接拉确保当天00:00 UTC快照入库 (实测1d点定格日界、值盘中不滚动)。
             log.info("Daily OI sync: {} symbols", symbols.size());
-            dataSyncService.fetchOiHistoryByPeriod(symbols, "1d", 30);
+            dataSyncService.backfillOi(symbols, "1d", 30);
         } catch (Exception e) {
             log.error("Daily OI sync failed", e);
         }
@@ -54,7 +57,9 @@ public class SyncScheduler {
             List<String> symbols = symbolService.fetchAndSaveSymbols().stream()
                     .map(s -> s.getSymbol())
                     .toList();
-            cachedSymbols = symbols;
+            synchronized (symbolsLock) {
+                cachedSymbols = symbols;
+            }
             log.info("Updated {} symbols", symbols.size());
         } catch (Exception e) {
             log.error("Failed to update symbols", e);

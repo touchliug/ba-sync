@@ -20,7 +20,6 @@ public class AppProperties {
     private ConcurrencyConfig concurrency = new ConcurrencyConfig();
     private SymbolConfig symbol = new SymbolConfig();
     private AnalysisConfig analysis = new AnalysisConfig();
-    private ScheduleConfig schedule = new ScheduleConfig();
     private ReportConfig report = new ReportConfig();
     private InitConfig init = new InitConfig();
 
@@ -272,14 +271,6 @@ public class AppProperties {
         private int venueWeight = 0;    // 预留, 无数据源
         // 价格"早期"窗口上限(%): 24h涨幅超此值价格分递减(防追高)
         private double earlyPriceMaxPct = 15.0;
-    }
-
-    @Data
-    public static class ScheduleConfig {
-        private String symbolUpdate = "0 0 6 * * ?";
-        private String dailyAnalysis = "0 5 8 * * ?";
-        private String shortTermAnalysis = "0 */10 * * * ?";
-        private String dailyOiSync = "0 20 8 * * ?";
     }
 
     @Data

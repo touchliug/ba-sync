@@ -35,9 +35,12 @@ public class DataSyncService {
         Map<String, List<KlineData>> stored = dataStore.getKlinesBatch(symbols, interval, period + 1);
         long intervalMs = intervalToMillis(interval);
         long now = System.currentTimeMillis();
+        // 命中条件: 9成symbol已入库, 且每个已入库symbol的最新一根都够新(2个interval内)。
+        // 不再要求"每个symbol都满period根": 新上市币天然历史不足period, 强行要求会让单个新币
+        // 每轮都触发全量重拉, 旁路掉DB缓存。历史缺口的补齐交由启动期 DataInitializer 按symbol逐个判缺。
         boolean hasEnoughData = stored.size() >= symbols.size() * 0.9
-                && stored.values().stream().allMatch(k -> k.size() >= period)
                 && stored.values().stream().allMatch(k -> {
+                    if (k.isEmpty()) return false;
                     long latestOpenTime = k.get(k.size() - 1).getOpenTime();
                     return now - latestOpenTime < intervalMs * 2;
                 });
@@ -58,7 +61,8 @@ public class DataSyncService {
             return symbol;
         });
         log.info("Fetched and stored {} klines for {} symbols", interval, result.size());
-        return result;
+        // 与命中分支一致裁剪到 period (API拉的是 period+1)。
+        return trimKlinesByPeriod(result, period);
     }
 
     /**

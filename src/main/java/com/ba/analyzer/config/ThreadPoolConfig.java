@@ -21,6 +21,9 @@ public class ThreadPoolConfig {
                 new LinkedBlockingQueue<>(500),
                 namedThreadFactory("http-pool"));
         executor.allowCoreThreadTimeOut(true);
+        // 队列(500)被打满时由提交线程自己跑该任务做背压, 而非默认 AbortPolicy 抛异常。
+        // symbol 数随币安上新持续增长, 逼近 500 时避免 RejectedExecutionException 直接丢任务。
+        executor.setRejectedExecutionHandler(new ThreadPoolExecutor.CallerRunsPolicy());
         return executor;
     }
 
