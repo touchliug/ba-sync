@@ -67,6 +67,7 @@ public class DataInitializer {
         log.info("=== Startup data integrity check: {} symbols ===", symbols.size());
         backfillDaily(symbols, cfg.getDaily(), now);
         backfillMidIntervals(symbols, cfg.getDaily().getDays(), now);
+        backfillHourlyOi(symbols, cfg.getDaily().getDays(), now);
         log.info("=== Startup data integrity check done ===");
     }
 
@@ -122,6 +123,16 @@ public class DataInitializer {
                     p.interval(), miss.size(), days, minBars, expected);
             dataSyncService.backfillKlines(miss, p.interval(), expected + p.barsPerDay());
         }
+    }
+
+    /** 1h OI: 按窗口内点数判缺, 分页补 (单次上限500)。 */
+    private void backfillHourlyOi(List<String> symbols, int days, long now) {
+        long sinceMs = now - (long) days * DAY_MS;
+        int expected = days * 24;
+        int minPts = (int) (expected * 0.9);
+        List<String> miss = findMissing(symbols, dataStore.countOpenInterestSince("1h", sinceMs), minPts);
+        log.info("Hourly OI gap — {} symbols (window {}d, need {}/{})", miss.size(), days, minPts, expected);
+        dataSyncService.backfillOiRange(miss, "1h", sinceMs, now);
     }
 
     /** 返回记录数不足 minCount(或完全缺失)的 symbol 列表。 */
