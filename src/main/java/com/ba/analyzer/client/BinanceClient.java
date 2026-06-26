@@ -59,9 +59,20 @@ public class BinanceClient {
     public List<SymbolInfo> getUsdtFuturesSymbols() {
         String url = appProperties.getBaseUrl() + "/fapi/v1/exchangeInfo";
         String json = executeRequest(url);
+        if (json.isEmpty()) {
+            log.error("Exchange info request returned empty body");
+            return Collections.emptyList();
+        }
         try {
             JsonNode root = objectMapper.readTree(json);
             JsonNode symbolsNode = root.get("symbols");
+            if (symbolsNode == null || !symbolsNode.isArray()) {
+                // 错误响应 (如 {"code":..,"msg":..}) 没有 symbols 数组: 不要让 .toString() 抛 NPE,
+                // 走兜底返回空 (上层 SymbolService 会回退到本地 symbols.json)。
+                log.error("Exchange info missing 'symbols' array, body head: {}",
+                        json.substring(0, Math.min(json.length(), 200)));
+                return Collections.emptyList();
+            }
             List<SymbolInfo> allSymbols = objectMapper.readValue(
                     symbolsNode.toString(), new TypeReference<List<SymbolInfo>>() {});
 
