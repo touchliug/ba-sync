@@ -66,7 +66,7 @@ public class DataInitializer {
         long now = System.currentTimeMillis();
         log.info("=== Startup data integrity check: {} symbols ===", symbols.size());
         backfillDaily(symbols, cfg.getDaily(), now);
-        backfillIntraday(symbols, cfg.getIntraday(), now);
+        backfillMidIntervals(symbols, cfg.getDaily().getDays(), now);
         log.info("=== Startup data integrity check done ===");
     }
 
@@ -109,22 +109,19 @@ public class DataInitializer {
         dataSyncService.backfillFundingRates(missFr, days * FUNDING_RATES_PER_DAY + 10);
     }
 
-    /** 日内级: 5m K / 5m OI, 按完整度比例判缺, OI 分页补拉。 */
-    private void backfillIntraday(List<String> symbols, AppProperties.IntradayInit cfg, long now) {
-        int hours = cfg.getHours();
-        long startMs = now - (long) hours * HOUR_MS;
-        int expected = hours * BARS_PER_HOUR_5M;
-        int minBars = (int) Math.floor(expected * cfg.getCompleteness());
-
-        List<String> missKline = findMissing(symbols, dataStore.countKlinesSince("5m", startMs), minBars);
-        List<String> missOi = findMissing(symbols, dataStore.countOpenInterestSince("5m", startMs), minBars);
-        log.info("Intraday gaps — 5m klines:{} 5m OI:{} (window {}h, need {}/{} bars)",
-                missKline.size(), missOi.size(), hours, minBars, expected);
-
-        // 5m K 线: expected (48h≈576) < 1500 单次上限, 直接拉。
-        dataSyncService.backfillKlines(missKline, "5m", expected + BARS_PER_HOUR_5M);
-        // 5m OI: 单次上限500 < expected, 必须按时间区间分页。
-        dataSyncService.backfillOiRange(missOi, "5m", startMs, now);
+    /** 1h/4h K线: 按"窗口内根数 < 期望*容差"判缺并补。 */
+    private void backfillMidIntervals(List<String> symbols, int days, long now) {
+        record Plan(String interval, int barsPerDay) {}
+        List<Plan> plans = List.of(new Plan("1h", 24), new Plan("4h", 6));
+        long sinceMs = now - (long) days * DAY_MS;
+        for (Plan p : plans) {
+            int expected = days * p.barsPerDay();
+            int minBars = (int) (expected * 0.9);
+            List<String> miss = findMissing(symbols, dataStore.countKlinesSince(p.interval(), sinceMs), minBars);
+            log.info("Mid-interval gap — {} klines:{} (window {}d, need {}/{})",
+                    p.interval(), miss.size(), days, minBars, expected);
+            dataSyncService.backfillKlines(miss, p.interval(), expected + p.barsPerDay());
+        }
     }
 
     /** 返回记录数不足 minCount(或完全缺失)的 symbol 列表。 */
