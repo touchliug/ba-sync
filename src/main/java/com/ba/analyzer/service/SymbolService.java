@@ -26,11 +26,14 @@ public class SymbolService {
     private final BinanceClient binanceClient;
     private final AppProperties appProperties;
     private final ObjectMapper objectMapper;
+    private final JdbcDataStore dataStore;
 
-    public SymbolService(BinanceClient binanceClient, AppProperties appProperties, ObjectMapper objectMapper) {
+    public SymbolService(BinanceClient binanceClient, AppProperties appProperties, ObjectMapper objectMapper,
+                         JdbcDataStore dataStore) {
         this.binanceClient = binanceClient;
         this.appProperties = appProperties;
         this.objectMapper = objectMapper;
+        this.dataStore = dataStore;
     }
 
     public List<SymbolInfo> fetchAndSaveSymbols() {
@@ -39,6 +42,12 @@ public class SymbolService {
         log.info("Fetched {} USDT perpetual futures symbols", symbols.size());
 
         saveSymbolsToFile(symbols);
+        try {
+            dataStore.saveSymbols(symbols);
+            log.info("Upserted {} symbols to DB", symbols.size());
+        } catch (Exception e) {
+            log.error("Failed to upsert symbols to DB (file still saved)", e);
+        }
         return symbols;
     }
 
