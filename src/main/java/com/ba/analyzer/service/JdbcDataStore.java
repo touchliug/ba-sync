@@ -99,6 +99,19 @@ public class JdbcDataStore {
                 PRIMARY KEY (symbol)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
+        jdbc.execute("""
+            CREATE TABLE IF NOT EXISTS premium_index (
+                symbol VARCHAR(20) NOT NULL,
+                mark_price VARCHAR(30),
+                index_price VARCHAR(30),
+                estimated_settle_price VARCHAR(30),
+                last_funding_rate VARCHAR(30),
+                next_funding_time BIGINT,
+                interest_rate VARCHAR(30),
+                `time` BIGINT,
+                PRIMARY KEY (symbol)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """);
         migrateOpenInterestPeriod();
         log.info("MySQL tables ready");
     }
@@ -334,6 +347,43 @@ public class JdbcDataStore {
             t.setOpenTime(rs.getLong("open_time"));
             t.setCloseTime(rs.getLong("close_time"));
             return t;
+        });
+    }
+
+    // ======================== PremiumIndex CRUD ========================
+
+    private static final String UPSERT_PREMIUM = """
+        INSERT INTO premium_index (symbol, mark_price, index_price, estimated_settle_price,
+            last_funding_rate, next_funding_time, interest_rate, `time`)
+        VALUES (?,?,?,?,?,?,?,?)
+        ON DUPLICATE KEY UPDATE mark_price=VALUES(mark_price), index_price=VALUES(index_price),
+            estimated_settle_price=VALUES(estimated_settle_price), last_funding_rate=VALUES(last_funding_rate),
+            next_funding_time=VALUES(next_funding_time), interest_rate=VALUES(interest_rate), `time`=VALUES(`time`)
+    """;
+
+    public void savePremiumIndexes(List<com.ba.analyzer.model.PremiumIndex> list) {
+        if (list == null || list.isEmpty()) return;
+        List<Object[]> batch = new ArrayList<>();
+        for (com.ba.analyzer.model.PremiumIndex p : list) {
+            batch.add(new Object[]{p.getSymbol(), p.getMarkPrice(), p.getIndexPrice(),
+                    p.getEstimatedSettlePrice(), p.getLastFundingRate(), p.getNextFundingTime(),
+                    p.getInterestRate(), p.getTime()});
+        }
+        jdbc.batchUpdate(UPSERT_PREMIUM, batch);
+    }
+
+    public List<com.ba.analyzer.model.PremiumIndex> getLatestPremiumIndexes() {
+        return jdbc.query("SELECT * FROM premium_index", (rs, n) -> {
+            com.ba.analyzer.model.PremiumIndex p = new com.ba.analyzer.model.PremiumIndex();
+            p.setSymbol(rs.getString("symbol"));
+            p.setMarkPrice(rs.getString("mark_price"));
+            p.setIndexPrice(rs.getString("index_price"));
+            p.setEstimatedSettlePrice(rs.getString("estimated_settle_price"));
+            p.setLastFundingRate(rs.getString("last_funding_rate"));
+            p.setNextFundingTime(rs.getLong("next_funding_time"));
+            p.setInterestRate(rs.getString("interest_rate"));
+            p.setTime(rs.getLong("time"));
+            return p;
         });
     }
 

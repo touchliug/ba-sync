@@ -57,6 +57,20 @@ class JdbcDataStoreTest {
     }
 
     @Test
+    void saveAndGetPremium_roundTrip() {
+        jdbc.execute("DELETE FROM premium_index WHERE symbol='TESTUSDT'");
+        com.ba.analyzer.model.PremiumIndex p = new com.ba.analyzer.model.PremiumIndex();
+        p.setSymbol("TESTUSDT");
+        p.setMarkPrice("10.0");
+        p.setLastFundingRate("0.0002");
+        p.setNextFundingTime(555);
+        store.savePremiumIndexes(java.util.List.of(p));
+
+        java.util.List<com.ba.analyzer.model.PremiumIndex> got = store.getLatestPremiumIndexes();
+        assertThat(got).anyMatch(x -> "TESTUSDT".equals(x.getSymbol()) && "10.0".equals(x.getMarkPrice()));
+    }
+
+    @Test
     void saveAndGetKlines_roundTrip() {
         // 用 no-arg + setter: KlineData 的 @AllArgsConstructor 还含 6 个 transient 缓存字段, 不用它。
         KlineData k = new KlineData();
