@@ -85,4 +85,30 @@ class BinanceClientParseTest {
         assertThat(tickers.get(0).getPriceChangePercent()).isEqualTo("2.5");
         assertThat(tickers.get(0).getCount()).isEqualTo(9);
     }
+
+    @Test
+    void getLongShortRatio_account_parses() {
+        server.enqueue(new MockResponse().setBody(
+                "[{\"symbol\":\"BTCUSDT\",\"longShortRatio\":\"1.8\",\"longAccount\":\"0.64\"," +
+                "\"shortAccount\":\"0.36\",\"timestamp\":111}]"));
+
+        var list = client.getLongShortRatio("BTCUSDT", LsrType.GLOBAL_ACCOUNT, "1h", 30);
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).getLongShortRatio()).isEqualTo("1.8");
+        assertThat(list.get(0).getLongAccount()).isEqualTo("0.64");
+        assertThat(list.get(0).getTimestamp()).isEqualTo(111);
+    }
+
+    @Test
+    void getLongShortRatio_taker_parses() {
+        server.enqueue(new MockResponse().setBody(
+                "[{\"buySellRatio\":\"1.2\",\"buyVol\":\"100\",\"sellVol\":\"83\",\"timestamp\":222}]"));
+
+        var list = client.getLongShortRatio("BTCUSDT", LsrType.TAKER, "1h", 30);
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).getBuySellRatio()).isEqualTo("1.2");
+        assertThat(list.get(0).getBuyVol()).isEqualTo("100");
+    }
 }

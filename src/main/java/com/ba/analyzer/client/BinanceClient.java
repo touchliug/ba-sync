@@ -3,6 +3,7 @@ package com.ba.analyzer.client;
 import com.ba.analyzer.config.AppProperties;
 import com.ba.analyzer.model.FundingRateData;
 import com.ba.analyzer.model.KlineData;
+import com.ba.analyzer.model.LongShortRatio;
 import com.ba.analyzer.model.OpenInterestData;
 import com.ba.analyzer.model.SymbolInfo;
 import com.ba.analyzer.model.PremiumIndex;
@@ -233,6 +234,23 @@ public class BinanceClient {
             return objectMapper.readValue(json, new TypeReference<List<Ticker24h>>() {});
         } catch (JsonProcessingException e) {
             log.error("Failed to parse 24hr tickers", e);
+            return Collections.emptyList();
+        }
+    }
+
+    public List<LongShortRatio> getLongShortRatio(String symbol, LsrType type, String period, int limit) {
+        String url = UriComponentsBuilder.fromHttpUrl(appProperties.getBaseUrl())
+                .path(type.getPath())
+                .queryParam("symbol", symbol)
+                .queryParam("period", period)
+                .queryParam("limit", limit)
+                .build().toUriString();
+        String json = executeRequest(url);
+        if (json.isEmpty()) return Collections.emptyList();
+        try {
+            return objectMapper.readValue(json, new TypeReference<List<LongShortRatio>>() {});
+        } catch (JsonProcessingException e) {
+            log.error("Failed to parse long/short ratio ({}) for {}", type, symbol, e);
             return Collections.emptyList();
         }
     }
