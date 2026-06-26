@@ -81,6 +81,24 @@ public class JdbcDataStore {
                 PRIMARY KEY (symbol)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
+        jdbc.execute("""
+            CREATE TABLE IF NOT EXISTS ticker_24h (
+                symbol VARCHAR(20) NOT NULL,
+                price_change_percent VARCHAR(30),
+                last_price VARCHAR(30),
+                open_price VARCHAR(30),
+                high_price VARCHAR(30),
+                low_price VARCHAR(30),
+                weighted_avg_price VARCHAR(30),
+                volume VARCHAR(40),
+                quote_volume VARCHAR(40),
+                trade_count BIGINT,
+                open_time BIGINT,
+                close_time BIGINT,
+                captured_at BIGINT,
+                PRIMARY KEY (symbol)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """);
         migrateOpenInterestPeriod();
         log.info("MySQL tables ready");
     }
@@ -272,6 +290,50 @@ public class JdbcDataStore {
             s.setOnboardDate(rs.getLong("onboard_date"));
             s.setDeliveryDate(rs.getLong("delivery_date"));
             return s;
+        });
+    }
+
+    // ======================== Ticker24h CRUD ========================
+
+    private static final String UPSERT_TICKER = """
+        INSERT INTO ticker_24h (symbol, price_change_percent, last_price, open_price, high_price,
+            low_price, weighted_avg_price, volume, quote_volume, trade_count, open_time, close_time, captured_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+        ON DUPLICATE KEY UPDATE price_change_percent=VALUES(price_change_percent),
+            last_price=VALUES(last_price), open_price=VALUES(open_price), high_price=VALUES(high_price),
+            low_price=VALUES(low_price), weighted_avg_price=VALUES(weighted_avg_price),
+            volume=VALUES(volume), quote_volume=VALUES(quote_volume), trade_count=VALUES(trade_count),
+            open_time=VALUES(open_time), close_time=VALUES(close_time), captured_at=VALUES(captured_at)
+    """;
+
+    public void saveTickers(List<com.ba.analyzer.model.Ticker24h> tickers) {
+        if (tickers == null || tickers.isEmpty()) return;
+        long now = System.currentTimeMillis();
+        List<Object[]> batch = new ArrayList<>();
+        for (com.ba.analyzer.model.Ticker24h t : tickers) {
+            batch.add(new Object[]{t.getSymbol(), t.getPriceChangePercent(), t.getLastPrice(),
+                    t.getOpenPrice(), t.getHighPrice(), t.getLowPrice(), t.getWeightedAvgPrice(),
+                    t.getVolume(), t.getQuoteVolume(), t.getCount(), t.getOpenTime(), t.getCloseTime(), now});
+        }
+        jdbc.batchUpdate(UPSERT_TICKER, batch);
+    }
+
+    public List<com.ba.analyzer.model.Ticker24h> getLatestTickers() {
+        return jdbc.query("SELECT * FROM ticker_24h", (rs, n) -> {
+            com.ba.analyzer.model.Ticker24h t = new com.ba.analyzer.model.Ticker24h();
+            t.setSymbol(rs.getString("symbol"));
+            t.setPriceChangePercent(rs.getString("price_change_percent"));
+            t.setLastPrice(rs.getString("last_price"));
+            t.setOpenPrice(rs.getString("open_price"));
+            t.setHighPrice(rs.getString("high_price"));
+            t.setLowPrice(rs.getString("low_price"));
+            t.setWeightedAvgPrice(rs.getString("weighted_avg_price"));
+            t.setVolume(rs.getString("volume"));
+            t.setQuoteVolume(rs.getString("quote_volume"));
+            t.setCount(rs.getLong("trade_count"));
+            t.setOpenTime(rs.getLong("open_time"));
+            t.setCloseTime(rs.getLong("close_time"));
+            return t;
         });
     }
 
