@@ -15,7 +15,8 @@ import java.util.List;
  *
  * 只负责把币安数据拉进MySQL, 不做任何分析。各任务cron集中在 application.yml 的 binance.schedule.*:
  * - symbol-update    : 更新USDT永续合约列表
- * - short-term-sync  : 每5分钟刷新日K/5m K/5m OI/资金费率 (供分析服务读取; 日K含当天动态那根)
+ * - short-term-sync  : 刷新 1d/1h/4h K线(含当天动态根)+ 资金费率 + 24h行情 + 标记价/溢价
+ * - mid-freq-sync    : 1h OI + 多空比 (吃 /futures/data 次数桶, 30分钟一轮)
  * - daily-oi-sync    : 每日同步日线OI (upsert永不删除 → 长期累积, 突破币安30天上限)
  *
  * 启动时的数据预加载/补齐已统一由 DataInitializer(ApplicationReadyEvent)负责, 本类不再做 @PostConstruct 预加载。
@@ -84,7 +85,7 @@ public class SyncScheduler {
             dataSyncService.syncFundingRates(symbols);
             dataSyncService.syncTickers();
             dataSyncService.syncPremiumIndex();
-            log.info("Daily/5m klines, 5m OI, and funding rates refreshed");
+            log.info("Short-term sync done: 1d/1h/4h klines, funding rates, 24h tickers, premium index");
         } catch (Exception e) {
             log.error("Short-term data sync failed", e);
         }
