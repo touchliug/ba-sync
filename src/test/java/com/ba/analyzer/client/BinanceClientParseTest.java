@@ -60,6 +60,19 @@ class BinanceClientParseTest {
     }
 
     @Test
+    void getPremiumIndexes_parsesArray() {
+        server.enqueue(new MockResponse().setBody(
+                "[{\"symbol\":\"BTCUSDT\",\"markPrice\":\"60000\",\"indexPrice\":\"59990\"," +
+                "\"lastFundingRate\":\"0.0001\",\"nextFundingTime\":123,\"time\":99}]"));
+
+        var list = client.getPremiumIndexes();
+
+        assertThat(list).hasSize(1);
+        assertThat(list.get(0).getMarkPrice()).isEqualTo("60000");
+        assertThat(list.get(0).getNextFundingTime()).isEqualTo(123);
+    }
+
+    @Test
     void get24hrTickers_parsesArray() {
         server.enqueue(new MockResponse().setBody(
                 "[{\"symbol\":\"BTCUSDT\",\"priceChangePercent\":\"2.5\",\"lastPrice\":\"60000\"," +
