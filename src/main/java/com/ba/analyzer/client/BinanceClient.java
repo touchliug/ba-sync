@@ -27,6 +27,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.function.Function;
 
 /**
@@ -46,6 +47,8 @@ public class BinanceClient {
     private final ObjectMapper objectMapper;
     private final ExecutorService executorService;
     private final Semaphore semaphore;
+    /** 全局限流冷却截止时刻(ms): 任一线程收到429/418后置位, 所有线程在该时刻前先等待。 */
+    private final AtomicLong rateLimitedUntilMs = new AtomicLong(0);
 
     public BinanceClient(OkHttpClient httpClient, AppProperties appProperties,
                          ObjectMapper objectMapper, @Qualifier("httpExecutor") ExecutorService executorService) {
@@ -95,6 +98,7 @@ public class BinanceClient {
                 .queryParam("limit", limit)
                 .build().toUriString();
         String json = executeRequest(url);
+        if (json.isEmpty()) return Collections.emptyList();
         try {
             List<List<Object>> rawKlines = objectMapper.readValue(
                     json, new TypeReference<List<List<Object>>>() {});
@@ -253,14 +257,22 @@ public class BinanceClient {
         int[] backoffMs = {500, 1500, 3000};
 
         for (int attempt = 0; attempt <= maxRetries; attempt++) {
+            // 进入请求前先看全局冷却: 别的线程刚被限流时, 本线程一起等, 不去火上浇油。
+            awaitRateLimitCooldown();
             Request request = new Request.Builder().url(url).get().build();
             try (Response response = httpClient.newCall(request).execute()) {
                 if (response.code() == 429 || response.code() == 418) {
+                    // 优先用币安返回的 Retry-After(秒), 否则退避表; 置全局冷却让所有线程一起退。
+                    long backoff = retryAfterMs(response, backoffMs[Math.min(attempt, backoffMs.length - 1)]);
+                    long until = System.currentTimeMillis() + backoff;
+                    rateLimitedUntilMs.updateAndGet(prev -> Math.max(prev, until));
                     if (attempt < maxRetries) {
-                        log.warn("Rate limited ({}), retrying in {}ms: {}", response.code(), backoffMs[attempt], url);
-                        Thread.sleep(backoffMs[attempt]);
+                        log.warn("Rate limited ({}), global backoff {}ms: {}", response.code(), backoff, url);
+                        Thread.sleep(backoff);
                         continue;
                     }
+                    log.error("Rate limited ({}) after {} retries, giving up: {}", response.code(), maxRetries, url);
+                    return "";
                 }
                 if (response.code() >= 500 && attempt < maxRetries) {
                     log.warn("Server error ({}), retrying in {}ms: {}", response.code(), backoffMs[attempt], url);
@@ -291,6 +303,31 @@ public class BinanceClient {
             }
         }
         return "";
+    }
+
+    /** 若处于全局限流冷却窗口内, 先睡到冷却结束(单次最多睡10s, 避免拖死单个请求的整体预算)。 */
+    private void awaitRateLimitCooldown() {
+        long wait = rateLimitedUntilMs.get() - System.currentTimeMillis();
+        if (wait > 0) {
+            try {
+                Thread.sleep(Math.min(wait, 10_000L));
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        }
+    }
+
+    /** 解析 429/418 响应的 Retry-After 头(秒), 返回退避毫秒数; 缺失或非法则用 fallback。上限30s。 */
+    private long retryAfterMs(Response response, long fallbackMs) {
+        String header = response.header("Retry-After");
+        if (header != null) {
+            try {
+                return Math.min(Long.parseLong(header.trim()) * 1000L, 30_000L);
+            } catch (NumberFormatException ignored) {
+                // 非数字(理论上币安只发秒数), 退回 fallback
+            }
+        }
+        return fallbackMs;
     }
 
     private long toLong(Object obj) {
