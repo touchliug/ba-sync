@@ -29,7 +29,6 @@ public class AppProperties {
         /** 启动时是否执行数据完整性校验与补齐。 */
         private boolean enabled = true;
         private DailyInit daily = new DailyInit();
-        private IntradayInit intraday = new IntradayInit();
     }
 
     @Data
@@ -43,19 +42,6 @@ public class AppProperties {
          */
         @Min(0)
         private int toleranceDays = 2;
-    }
-
-    @Data
-    public static class IntradayInit {
-        /** 日内(5m K / 5m OI)校验窗口小时数。 */
-        @Min(1)
-        private int hours = 48;
-        /**
-         * 完整度阈值: 实际记录数 / 期望记录数 >= 此值即视为完整。
-         * 5m 窗口期望根数大, 按比例容忍低流动性币的零星缺口(默认98% → 48h容忍约11根)。
-         */
-        @Min(0) @Max(1)
-        private double completeness = 0.98;
     }
 
     @Data
@@ -98,7 +84,6 @@ public class AppProperties {
         private SlowRiseConfig slowRise = new SlowRiseConfig();
         private PriceDropOiRiseConfig priceDropOiRise = new PriceDropOiRiseConfig();
         private LowPriceConsolidationConfig lowPriceConsolidation = new LowPriceConsolidationConfig();
-        private ShortTermRiseConfig shortTermRise = new ShortTermRiseConfig();
         private BullishAccumulationConfig bullishAccumulation = new BullishAccumulationConfig();
         private FirstYinDayConfig firstYinDay = new FirstYinDayConfig();
         private OiConsecutiveRiseConfig oiConsecutiveRise = new OiConsecutiveRiseConfig();
@@ -162,20 +147,6 @@ public class AppProperties {
         private double maxPriceChangePercent = 10;
         private double lowPricePercentile = 30;
         private double volumeSurgeRatio = 1.0;
-    }
-
-    @Data
-    public static class ShortTermRiseConfig {
-        private boolean enabled = true;
-        private String interval = "5m";
-        private int period = 6;
-        private double thresholdPercent = 10;
-        private double volumeSurgeRatio = 1.0;
-        private int minScore = 70;
-        private double launchBodyRatio = 0.6;
-        private double launchClosePos = 0.8;
-        private double launchVolRatio = 3.0;
-        private double takerBuyRatio = 0.55;
     }
 
     @Data
