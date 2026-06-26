@@ -22,6 +22,7 @@ public class AppProperties {
     private AnalysisConfig analysis = new AnalysisConfig();
     private ReportConfig report = new ReportConfig();
     private InitConfig init = new InitConfig();
+    private LsrConfig lsr = new LsrConfig();
 
     @Data
     public static class InitConfig {
@@ -55,6 +56,13 @@ public class AppProperties {
          */
         @Min(0) @Max(1)
         private double completeness = 0.98;
+    }
+
+    @Data
+    public static class LsrConfig {
+        private boolean enabled = true;
+        private String period = "1h";
+        private int limit = 30;
     }
 
     @Data

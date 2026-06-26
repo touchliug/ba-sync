@@ -91,6 +91,28 @@ public class DataSyncService {
         }
     }
 
+    /** 逐 symbol × 4 端点拉多空比, 归一化为 row 后 upsert。吃 /futures/data 次数桶, 由调用方控频率。 */
+    public void syncLongShortRatio(List<String> symbols, String period, int limit) {
+        for (com.ba.analyzer.client.LsrType type : com.ba.analyzer.client.LsrType.values()) {
+            binanceClient.executeConcurrent(symbols, symbol -> {
+                List<com.ba.analyzer.model.LongShortRatio> raw =
+                        binanceClient.getLongShortRatio(symbol, type, period, limit);
+                if (raw.isEmpty()) return symbol;
+                List<com.ba.analyzer.model.LongShortRatioRow> rows = new java.util.ArrayList<>();
+                for (com.ba.analyzer.model.LongShortRatio r : raw) {
+                    String ratio = type.isTaker() ? r.getBuySellRatio() : r.getLongShortRatio();
+                    String lv = type.isTaker() ? r.getBuyVol() : r.getLongAccount();
+                    String sv = type.isTaker() ? r.getSellVol() : r.getShortAccount();
+                    rows.add(new com.ba.analyzer.model.LongShortRatioRow(
+                            symbol, type.dbValue(), period, r.getTimestamp(), ratio, lv, sv));
+                }
+                dataStore.saveLongShortRatios(rows);
+                return symbol;
+            });
+        }
+        log.info("Long/short ratio sync done for {} symbols × 4 types", symbols.size());
+    }
+
     /** 拉全市场24h行情(单次批量)并 upsert 最新快照。 */
     public void syncTickers() {
         List<com.ba.analyzer.model.Ticker24h> tickers = binanceClient.get24hrTickers();
