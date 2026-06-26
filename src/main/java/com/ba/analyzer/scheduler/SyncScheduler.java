@@ -85,6 +85,7 @@ public class SyncScheduler {
             dataSyncService.syncIntradayOi(symbols, INTRADAY_OI_PERIODS);
             dataSyncService.syncFundingRates(symbols);
             dataSyncService.syncTickers();
+            dataSyncService.syncPremiumIndex();
             log.info("Daily/5m klines, 5m OI, and funding rates refreshed");
         } catch (Exception e) {
             log.error("Short-term data sync failed", e);

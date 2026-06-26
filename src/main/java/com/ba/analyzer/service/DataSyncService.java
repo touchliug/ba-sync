@@ -82,6 +82,15 @@ public class DataSyncService {
         });
     }
 
+    /** 拉全市场标记价/溢价(单次批量)并 upsert 最新快照。 */
+    public void syncPremiumIndex() {
+        List<com.ba.analyzer.model.PremiumIndex> list = binanceClient.getPremiumIndexes();
+        if (!list.isEmpty()) {
+            dataStore.savePremiumIndexes(list);
+            log.info("Synced {} premium index", list.size());
+        }
+    }
+
     /** 拉全市场24h行情(单次批量)并 upsert 最新快照。 */
     public void syncTickers() {
         List<com.ba.analyzer.model.Ticker24h> tickers = binanceClient.get24hrTickers();
