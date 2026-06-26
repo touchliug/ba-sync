@@ -22,9 +22,9 @@ binance:
   base-url: https://fapi.binance.com
 
   proxy:
-    enabled: false    # 部署VPS可直连币安; 本地开发需走代理时改回 true
+    enabled: true    # 部署VPS可直连币安; 本地开发需走代理时改回 true
     host: 127.0.0.1
-    port: 7890
+    port: 7897
 
   concurrency:
     max-requests: 10
@@ -60,3 +60,5 @@ binance:
     # 每日同步日线OI (北京时间8:20, UTC零点已过, 币安当日1d点已生成)。
     # upsert+永不删除 → 日线OI序列随时间无限累积, 突破币安openInterestHist的30天上限。
     daily-oi-sync: "0 10 8 * * ?"
+    # 中频: 1h OI + 多空比 (吃 /futures/data 次数桶, 故 30 分钟一轮, 不进高频)
+    mid-freq-sync: "0 */30 * * * ?"

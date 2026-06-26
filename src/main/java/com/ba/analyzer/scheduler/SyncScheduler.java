@@ -90,6 +90,22 @@ public class SyncScheduler {
         }
     }
 
+    @Scheduled(cron = "${binance.schedule.mid-freq-sync}")
+    public void syncMidFreq() {
+        try {
+            List<String> symbols = getSymbols();
+            log.info("Mid-freq sync: 1h OI + long/short ratio, {} symbols", symbols.size());
+            // 1h OI: 拉最近若干点 upsert 累积 (单次上限500, 取200≈8天覆盖更新窗口足够)。
+            dataSyncService.fetchOiHistoryByPeriod(symbols, "1h", 200);
+            var lsr = appProperties.getLsr();
+            if (lsr.isEnabled()) {
+                dataSyncService.syncLongShortRatio(symbols, lsr.getPeriod(), lsr.getLimit());
+            }
+        } catch (Exception e) {
+            log.error("Mid-freq sync failed", e);
+        }
+    }
+
     private int dailyDays() {
         return appProperties.getInit().getDaily().getDays();
     }
