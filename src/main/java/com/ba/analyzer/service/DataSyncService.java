@@ -159,12 +159,6 @@ public class DataSyncService {
         return result;
     }
 
-    /** 同步日内5m OI到DB(供6小时级点火检测使用)。 */
-    public void syncIntradayOi(List<String> symbols, int limit) {
-        log.info("Syncing 5m OI for {} symbols, {} periods", symbols.size(), limit);
-        fetchOiHistoryByPeriod(symbols, "5m", limit);
-    }
-
     // ======================== 强制补数据 (供启动校验, 跳过命中率/新鲜度启发式) ========================
 
     /** 对指定的(缺数据)symbol 强制从币安拉取 K 线并写回, 不做任何 DB 命中判断。 */
