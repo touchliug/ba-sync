@@ -112,6 +112,19 @@ public class JdbcDataStore {
                 PRIMARY KEY (symbol)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
+        jdbc.execute("""
+            CREATE TABLE IF NOT EXISTS long_short_ratio (
+                symbol VARCHAR(20) NOT NULL,
+                ratio_type VARCHAR(20) NOT NULL,
+                period VARCHAR(10) NOT NULL,
+                `timestamp` BIGINT NOT NULL,
+                long_short_ratio VARCHAR(30),
+                long_value VARCHAR(30),
+                short_value VARCHAR(30),
+                PRIMARY KEY (symbol, ratio_type, period, `timestamp`),
+                INDEX idx_lsr_lookup (symbol, ratio_type, period, `timestamp` DESC)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """);
         migrateOpenInterestPeriod();
         log.info("MySQL tables ready");
     }
@@ -385,6 +398,40 @@ public class JdbcDataStore {
             p.setTime(rs.getLong("time"));
             return p;
         });
+    }
+
+    // ======================== LongShortRatio CRUD ========================
+
+    private static final String UPSERT_LSR = """
+        INSERT INTO long_short_ratio (symbol, ratio_type, period, `timestamp`,
+            long_short_ratio, long_value, short_value)
+        VALUES (?,?,?,?,?,?,?)
+        ON DUPLICATE KEY UPDATE long_short_ratio=VALUES(long_short_ratio),
+            long_value=VALUES(long_value), short_value=VALUES(short_value)
+    """;
+
+    public void saveLongShortRatios(List<com.ba.analyzer.model.LongShortRatioRow> rows) {
+        if (rows == null || rows.isEmpty()) return;
+        List<Object[]> batch = new ArrayList<>();
+        for (com.ba.analyzer.model.LongShortRatioRow r : rows) {
+            batch.add(new Object[]{r.symbol(), r.ratioType(), r.period(), r.timestamp(),
+                    r.ratio(), r.longValue(), r.shortValue()});
+        }
+        jdbc.batchUpdate(UPSERT_LSR, batch);
+    }
+
+    public List<com.ba.analyzer.model.LongShortRatioRow> getLongShortRatio(
+            String symbol, String ratioType, String period, int limit) {
+        String sql = "SELECT * FROM long_short_ratio WHERE symbol=? AND ratio_type=? AND period=? " +
+                "ORDER BY `timestamp` DESC LIMIT ?";
+        List<com.ba.analyzer.model.LongShortRatioRow> result = jdbc.query(sql, (rs, n) ->
+                new com.ba.analyzer.model.LongShortRatioRow(
+                        rs.getString("symbol"), rs.getString("ratio_type"), rs.getString("period"),
+                        rs.getLong("timestamp"), rs.getString("long_short_ratio"),
+                        rs.getString("long_value"), rs.getString("short_value")),
+                symbol, ratioType, period, limit);
+        java.util.Collections.reverse(result);
+        return result;
     }
 
     // ======================== Coverage counts (供启动补数据校验) ========================

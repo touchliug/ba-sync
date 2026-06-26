@@ -71,6 +71,19 @@ class JdbcDataStoreTest {
     }
 
     @Test
+    void saveAndGetLsr_roundTrip() {
+        jdbc.execute("DELETE FROM long_short_ratio WHERE symbol='TESTUSDT'");
+        var rows = java.util.List.of(
+            new com.ba.analyzer.model.LongShortRatioRow("TESTUSDT", "GLOBAL_ACCOUNT", "1h", 111L, "1.8", "0.64", "0.36"));
+        store.saveLongShortRatios(rows);
+
+        var got = store.getLongShortRatio("TESTUSDT", "GLOBAL_ACCOUNT", "1h", 10);
+        assertThat(got).hasSize(1);
+        assertThat(got.get(0).ratio()).isEqualTo("1.8");
+        assertThat(got.get(0).longValue()).isEqualTo("0.64");
+    }
+
+    @Test
     void saveAndGetKlines_roundTrip() {
         // 用 no-arg + setter: KlineData 的 @AllArgsConstructor 还含 6 个 transient 缓存字段, 不用它。
         KlineData k = new KlineData();
