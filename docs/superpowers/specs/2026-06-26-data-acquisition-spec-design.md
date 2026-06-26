@@ -38,7 +38,7 @@ ba-sync 的角色不变 —— **从币安拉数据、写入 MySQL**。本规格
 | # | 数据 | 周期 | 端点 | 限额桶 | 存储表 |
 |---|---|---|---|---|---|
 | 1 | K线 | **1d / 1h / 4h** | `/fapi/v1/klines` | 权重 | `klines`(现有) |
-| 2 | 持仓量 OI | **1d** | `futures/data/openInterestHist` | 次数 | `open_interest`(现有) |
+| 2 | 持仓量 OI | **1d / 1h** | `futures/data/openInterestHist` | 次数 | `open_interest`(现有) |
 | 3 | 资金费率 | 8h 结算 | `/fapi/v1/fundingRate` | 权重 | `funding_rate`(现有) |
 | 4 | 24h 全市场行情 | 快照 | `/fapi/v1/ticker/24hr`(批量) | 权重 40×1 | `ticker_24h`(新) |
 | 5 | 标记价/溢价 | 快照 | `/fapi/v1/premiumIndex`(批量) | 权重低×1 | `premium_index`(新) |
@@ -49,14 +49,18 @@ ba-sync 的角色不变 —— **从币安拉数据、写入 MySQL**。本规格
 
 ### 5.1 K线 (1d / 1h / 4h)
 - **字段**: openTime, OHLC, volume, closeTime, quoteAssetVolume, numberOfTrades, takerBuyBase, takerBuyQuote(已有全字段, 含主动买盘 → 可算买卖压力)。
+- **成交量数据就在这里**: 每根 K线自带 `volume`(成交量/币)、`quoteAssetVolume`(成交额/U)、`numberOfTrades`(笔数)、`takerBuyBase/Quote`(主动买入量/额)。→ 成交量与买卖压力 **无需独立端点**, 随 1d/1h/4h K线一并入库, 每个周期各有其量。
 - **表**: `klines`(无需改结构, `interval` 已是列, 写入值由 `5m` 换成 `1h/4h`)。
 - **刷新**: 历史只拉一次、永久缓存(upsert 永不删); 每轮只强刷"当前未收盘那根"(`limit=2` upsert, 权重 1)。
 - **历史深度(首次 backfill)**: 1d 30 天 / 1h 30 天(≈720 根) / 4h 30 天(≈180 根); 之后随时间累积。
 
-### 5.2 持仓量 OI (1d)
-- **字段**: sumOpenInterest(张), sumOpenInterestValue(U), timestamp(对齐 UTC 日界, 实测值盘中不滚动)。
-- **表**: `open_interest`(period 仅保留 `1d`)。
-- **刷新**: 每日一次无条件拉 30 天 upsert(已在 SyncScheduler 落地); upsert 永不删 → 突破币安 30 天上限, 长期累积。
+### 5.2 持仓量 OI (1d + 1h)
+- **字段**: sumOpenInterest(张), sumOpenInterestValue(U), timestamp。
+- **表**: `open_interest`(period 列已支持多周期, 写 `1d` 与 `1h` 两种值; 无需改结构)。
+- **1d**: 每日一次无条件拉 30 天 upsert(已在 SyncScheduler 落地); 对齐 UTC 日界, 值盘中不滚动。
+- **1h**(新): 供 **OI 增量/动量** 类策略, 与 1h K线对齐。币安 `openInterestHist?period=1h` 单次上限 500(≈20 天),
+  首次按时间区间分页补 30 天(复用现有 `getOpenInterestHistoryRange`); 之后周期性拉最近若干点 upsert 累积(突破 30 天上限)。
+- **刷新频率**: 1h 点每小时一根 → 约 **每 30~60 分钟刷一次**即可, 不进高频短周期, 控住 `/futures/data/` 次数桶。
 
 ### 5.3 资金费率 (8h)
 - **字段**: fundingRate, fundingTime。
@@ -170,10 +174,10 @@ CREATE TABLE IF NOT EXISTS long_short_ratio (
 砍 5m 后稳态每"短周期"一轮:
 - K线(1d/1h/4h): 历史命中缓存, 仅强刷当前根 → 3 interval × 逐 symbol × `limit=2`(权重1)。这是权重大头, 由下一阶段限速器按 `X-MBX-USED-WEIGHT-1M` 节流。
 - ticker_24h: 1 次(权重40)。premium: 1 次。→ 几乎免费, 覆盖工具型全市场分析。
-- OI 1d: 每日 1 次 backfill(不在短周期内)。
-- 多空比: **唯一持续吃"次数桶"的项**, 必须限频/限范围 → 下一阶段定。
+- OI: 1d 每日 1 次 backfill(不在短周期内); 1h 每 30~60 分钟一刷(逐 symbol, 吃次数桶)。
+- **次数桶(`/futures/data/`)消费者 = 1h OI + 多空比**: 1h OI 靠低频(30~60min)控量; 多空比逐 symbol×4 端点最重, 覆盖范围/频率 → 下一阶段定。
 
-结论: 砍 5m + 历史永久缓存 + 批量端点后, **权重桶压力主要来自逐 symbol 强刷当前 K线**, 次数桶压力集中在多空比。两者都可控, 留给下一阶段的限速器与 cadence 设计。
+结论: 砍 5m + 历史永久缓存 + 批量端点后, **权重桶压力主要来自逐 symbol 强刷当前 K线**(限速器节流), **次数桶压力来自 1h OI + 多空比**(靠低频/限范围控)。两者都可控, 留给下一阶段的限速器与 cadence 设计。
 
 ## 9. 下一阶段(本规格定稿后)
 
