@@ -17,7 +17,6 @@ import java.util.TimeZone;
 public class SyncApplication {
 
     public static void main(String[] args) {
-        // JVM 固定 Asia/Shanghai: 行为与北京开发环境一致, 不随部署服务器时区漂移。
         TimeZone.setDefault(TimeZone.getTimeZone("Asia/Shanghai"));
         SpringApplication.run(SyncApplication.class, args);
     }
