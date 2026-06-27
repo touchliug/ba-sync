@@ -4,9 +4,9 @@
 
 ## 职责
 - 更新合约列表(`/fapi/v1/exchangeInfo`)→ `symbols.json`
-- 同步 K 线(日线 + 5m)、持仓量 OI(5m + 日线)、资金费率到 MySQL
+- 同步 K 线(1d / 1h / 4h)、持仓量 OI(1d + 1h)、资金费率、24h 行情、标记价/溢价、多空比到 MySQL
 - 拥有数据库 schema:`JdbcDataStore` 启动时 `CREATE TABLE IF NOT EXISTS` 并做幂等迁移
-- 日线 OI 每日 upsert、永不删除 → 序列随时间无限累积,突破币安 `openInterestHist` 的 30 天上限
+- 日线 OI / K线 / 资金费率 / 多空比每次 upsert、永不删除 → 序列随时间无限累积,突破币安 `openInterestHist` 的 30 天上限
 - 启动时做数据完整性校验并补齐缺口(见下方「启动初始化」)
 
 ## 启动初始化(DataInitializer,ApplicationReadyEvent)
@@ -19,17 +19,22 @@
 | 日 K 线(1d) | 30 天 | 记录数 < `days - tolerance`(默认容差 2 天) |
 | 日线 OI(1d) | 30 天 | 同上 |
 | 资金费率(8h 结算) | 30 天 | 记录数 < `(days-tolerance)*3` |
-| 5m K 线 | 48 小时 | 完整度 < `completeness`(默认 0.98) |
-| 5m OI | 48 小时 | 同上(分页拉取,币安单次上限 500) |
+| 1h / 4h K 线 | 30 天 | 窗口内根数 < 期望 × 0.9(`days*24` / `days*6`) |
+| 1h OI | 30 天 | 同上(分页拉取,币安单次上限 500) |
 
-配置见 `application.yml` 的 `binance.init.*`。日 K 用币安原生 UTC 日界(北京 08:00 分界),5m 边界跨时区重合,均无时区误差。上市不足窗口的新币天然填不满,每次启动会被判缺重拉 —— 启动级一次性任务,可接受。
+配置见 `application.yml` 的 `binance.init.*`。日 K 用币安原生 UTC 日界(北京 08:00 分界),均无时区误差。上市不足窗口的新币天然填不满,每次启动会被判缺重拉 —— 启动级一次性任务,可接受。
 
 ## 定时任务(application.yml `binance.schedule`,北京时间)
 | 任务 | cron | 说明 |
 |---|---|---|
 | symbol-update | `0 0 6 * * ?` | 每天 6 点更新合约列表 |
-| short-term-sync | `0 */5 * * * ?` | 每 5 分钟刷新日K(含当天动态那根)/5mK/5m OI/资金费率 |
-| daily-oi-sync | `0 20 8 * * ?` | 每日同步日线 OI(累积长历史) |
+| short-term-sync | `0 */3 * * * ?` | 每 3 分钟刷新 1d/1h/4h K线(含当天动态那根)+ 资金费率 + 24h 行情 + 标记价/溢价 |
+| mid-freq-sync | `0 */30 * * * ?` | 每 30 分钟同步 1h OI + 多空比(吃 `/futures/data` 计次桶) |
+| daily-oi-sync | `0 10 8 * * ?` | 每日同步日线 OI(累积长历史) |
+
+## 数据库表结构
+MySQL `ba` 库共 7 张表,字段含义、单位、来源端点、表间关系详见
+👉 [docs/数据库表结构说明.md](docs/数据库表结构说明.md)
 
 ## 与 ba-analysis 的关系
 两个服务**完全独立**,仅通过 MySQL 交换数据。本服务是唯一的写入方,`ba-analysis` 只读。
