@@ -20,7 +20,7 @@ public class ScheduleConfig implements SchedulingConfigurer {
 
     @Override
     public void configureTasks(ScheduledTaskRegistrar taskRegistrar) {
-        scheduler = Executors.newScheduledThreadPool(3);
+        scheduler = Executors.newScheduledThreadPool(4);
         taskRegistrar.setScheduler(scheduler);
     }
 

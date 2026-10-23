@@ -28,7 +28,9 @@
 | 任务 | cron | 说明 |
 |---|---|---|
 | symbol-update | `0 0 6 * * ?` | 每天 6 点更新合约列表 |
-| short-term-sync | `0 */3 * * * ?` | 每 3 分钟刷新 1d/1h/4h K线(含当天动态那根)+ 资金费率 + 24h 行情 + 标记价/溢价 |
+| short-term-sync | `0 */3 * * * ?` | 每 3 分钟刷新 1d/1h K线(含当前动态那根)+ 24h 行情 + 标记价/溢价 |
+| four-hour-kline-sync | `0 1/15 * * * ?` | 每 15 分钟刷新 4h K线(interval 粗,无需 3 分钟级) |
+| funding-rate-sync | `0 5 * * * ?` | 每小时同步资金费率(8h 才结算一次) |
 | mid-freq-sync | `0 */30 * * * ?` | 每 30 分钟同步 1h OI + 多空比(吃 `/futures/data` 计次桶) |
 | daily-oi-sync | `0 10 8 * * ?` | 每日同步日线 OI(累积长历史) |
 

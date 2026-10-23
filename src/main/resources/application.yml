@@ -53,8 +53,12 @@ binance:
   schedule:
     # JVM 固定 Asia/Shanghai 运行 (见 SyncApplication)。以下 cron 均为北京时间。
     symbol-update: "0 0 6 * * ?"
-    # short-term-sync 每5分钟已刷新日K(含当天动态那根), 故不再单设每小时 daily-kline-sync。
+    # 高频: 1d/1h K线(含当前动态根) + 24h行情 + 标记价/溢价
     short-term-sync: "0 */3 * * * ?"
+    # 4h K线: interval 粗, 15分钟一轮足够 (起始分钟错开 */3 的整点)
+    four-hour-kline-sync: "0 1/15 * * * ?"
+    # 资金费率: 8h 结算一次, 每小时一轮足够 (原先在3分钟任务里逐symbol重复拉取纯属浪费配额)
+    funding-rate-sync: "0 5 * * * ?"
     # 每日同步日线OI (北京时间8:20, UTC零点已过, 币安当日1d点已生成)。
     # upsert+永不删除 → 日线OI序列随时间无限累积, 突破币安openInterestHist的30天上限。
     daily-oi-sync: "0 10 8 * * ?"

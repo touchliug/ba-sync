@@ -14,10 +14,12 @@ import java.util.List;
  * 数据同步调度器 (ba-sync 专用)。
  *
  * 只负责把币安数据拉进MySQL, 不做任何分析。各任务cron集中在 application.yml 的 binance.schedule.*:
- * - symbol-update    : 更新USDT永续合约列表
- * - short-term-sync  : 刷新 1d/1h/4h K线(含当天动态根)+ 资金费率 + 24h行情 + 标记价/溢价
- * - mid-freq-sync    : 1h OI + 多空比 (吃 /futures/data 次数桶, 30分钟一轮)
- * - daily-oi-sync    : 每日同步日线OI (upsert永不删除 → 长期累积, 突破币安30天上限)
+ * - symbol-update        : 更新USDT永续合约列表
+ * - short-term-sync      : 刷新 1d/1h K线(含当前动态根)+ 24h行情 + 标记价/溢价
+ * - four-hour-kline-sync : 4h K线 (15分钟一轮, interval粗无需高频)
+ * - funding-rate-sync    : 资金费率 (8h结算, 每小时一轮足够)
+ * - mid-freq-sync        : 1h OI + 多空比 (吃 /futures/data 次数桶, 30分钟一轮)
+ * - daily-oi-sync        : 每日同步日线OI (upsert永不删除 → 长期累积, 突破币安30天上限)
  *
  * 启动时的数据预加载/补齐已统一由 DataInitializer(ApplicationReadyEvent)负责, 本类不再做 @PostConstruct 预加载。
  */
@@ -30,10 +32,10 @@ public class SyncScheduler {
     private final AppProperties appProperties;
     private final DataSyncService dataSyncService;
 
-    /** 中短周期K线集合 (1d 在上面单独处理)。 */
-    private static final List<String> INTRADAY_INTERVALS = List.of("1h", "4h");
-    /** 1h/4h 历史缓存判定的回看根数 (30天 1h≈720; 取整 800 留余量, 仍 < 币安1500上限)。 */
-    private static final int KLINE_HISTORY_BARS = 800;
+    /** 1h 历史回看根数 (30天≈720; 取整 800 留余量, 仍 < 币安1500上限)。 */
+    private static final int KLINE_BARS_1H = 800;
+    /** 4h 历史回看根数 (30天=180; 取 200 留余量, limit≤500 的请求权重更低)。 */
+    private static final int KLINE_BARS_4H = 200;
 
     private volatile List<String> cachedSymbols = List.of();
     private final Object symbolsLock = new Object();
@@ -78,16 +80,35 @@ public class SyncScheduler {
             dataSyncService.syncDailyKlines(symbols, days);
             // 历史序列走缓存省配额, 但当天日线那根是动态的: 强制刷新最新2根, 保证下游拿到实时值。
             dataSyncService.refreshCurrentKline(symbols, "1d");
-            for (String interval : INTRADAY_INTERVALS) {
-                dataSyncService.syncKlinesIfStale(symbols, interval, KLINE_HISTORY_BARS);
-                dataSyncService.refreshCurrentKline(symbols, interval);
-            }
-            dataSyncService.syncFundingRates(symbols);
+            dataSyncService.syncKlinesIfStale(symbols, "1h", KLINE_BARS_1H);
+            dataSyncService.refreshCurrentKline(symbols, "1h");
             dataSyncService.syncTickers();
             dataSyncService.syncPremiumIndex();
-            log.info("Short-term sync done: 1d/1h/4h klines, funding rates, 24h tickers, premium index");
+            log.info("Short-term sync done: 1d/1h klines, 24h tickers, premium index");
         } catch (Exception e) {
             log.error("Short-term data sync failed", e);
+        }
+    }
+
+    /** 4h K线低频刷新: interval 本身4小时, 无需跟随3分钟级任务, 降到15分钟一轮省API权重。 */
+    @Scheduled(cron = "${binance.schedule.four-hour-kline-sync}")
+    public void syncFourHourKlines() {
+        try {
+            List<String> symbols = getSymbols();
+            dataSyncService.syncKlinesIfStale(symbols, "4h", KLINE_BARS_4H);
+            dataSyncService.refreshCurrentKline(symbols, "4h");
+        } catch (Exception e) {
+            log.error("4h kline sync failed", e);
+        }
+    }
+
+    /** 资金费率每8小时才结算一次: 每小时同步足够新鲜, 不必跟随3分钟级任务逐symbol重复拉取。 */
+    @Scheduled(cron = "${binance.schedule.funding-rate-sync}")
+    public void syncFundingRates() {
+        try {
+            dataSyncService.syncFundingRates(getSymbols());
+        } catch (Exception e) {
+            log.error("Funding rate sync failed", e);
         }
     }
 
