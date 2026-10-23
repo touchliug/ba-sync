@@ -1,33 +1,57 @@
 # ============================================================
-# 外部配置模板 —— 复制为 config/application.yml 并填入真实值。
+# ba-sync 部署配置模板 —— 在部署机上复制为 config/application.yml 并填入真实值:
 #
 #   cp config/application.yml.example config/application.yml
+#   chmod 600 config/application.yml      # 含数据库密码, 仅部署用户可读
 #
-# Spring Boot 启动时会用 config/application.yml 逐项覆盖 jar 内打包的 application.yml,
-# 外部有的覆盖、外部没写的沿用 jar 内默认。改完重启即可, 无需重新打包(mvn package)。
-# 真实的 config/application.yml 已被 .gitignore 忽略, 不会进版本库 —— 密钥只留在部署机上。
+# start.sh 以 --spring.config.additional-location=optional:file:./config/ 启动,
+# 本文件逐项覆盖 jar 内打包的 application.yml: 写了的覆盖, 没写的沿用 jar 内默认。
+# 改完 ./start.sh restart 即可, 无需重新打包。
+# 真实的 config/application.yml 已被 .gitignore 忽略, 密钥只留在部署机上。
 # ============================================================
+
+server:
+  port: 8081                 # 健康检查: curl http://127.0.0.1:8081/api/health
 
 spring:
   datasource:
+    # 部署机与 MySQL 同机时 <DB_HOST> 填 127.0.0.1。
+    # rewriteBatchedStatements=true 必须保留: 否则 JDBC 批量 upsert 退化为逐行往返。
     url: jdbc:mysql://<DB_HOST>:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: root
+    # 二选一: 直接填明文(本文件已 chmod 600), 或保留 ${DB_PASSWORD} 并在启动前 export DB_PASSWORD=...
+    # (start.sh 不会自动加载 .env)
     password: <YOUR_DB_PASSWORD>
 
 binance:
-  # 本地开发通常需走代理访问币安; VPS 可直连币安则 enabled: false。
+  # 【必须】jar 内默认 proxy.enabled=true(给本地开发走 127.0.0.1:7897 代理)。
+  # 部署机直连币安, 不关掉则所有币安请求连不上代理而失败。
   proxy:
     enabled: false
-    host: 127.0.0.1
-    port: 7897
 
-  # 以下为可选覆盖示例, jar 内已有默认值, 按需取消注释并填入:
+  # 首次部署: 启动后自动按 symbol 补齐近 30 天日K/1h/4h K线、日线/1h OI、资金费率,
+  # 全市场约 500+ 币需数分钟到十几分钟, 期间日志较多属正常。之后每次重启只补缺口。
+  init:
+    enabled: true
 
-  # 中频任务 cron (1h OI + 多空比, 默认每30分钟一轮):
+  # ---------- 以下为可选覆盖, jar 内已有默认值, 按需取消注释 ----------
+
+  # 并发: 遇到频繁 429/418 限流时调低 max-requests 或调高 request-interval-ms
+  # concurrency:
+  #   max-requests: 10
+  #   request-interval-ms: 100
+  #   weight-soft-limit: 2000     # X-MBX-USED-WEIGHT-1M 达此值主动退避 (币安上限 2400/min)
+
+  # 定时任务 cron (JVM 固定 Asia/Shanghai, 均为北京时间):
   # schedule:
-  #   mid-freq-sync: "0 */30 * * * ?"
+  #   symbol-update: "0 0 6 * * ?"           # 合约列表
+  #   short-term-sync: "0 */3 * * * ?"       # 1d/1h K线 + 24h行情 + 标记价
+  #   four-hour-kline-sync: "0 1/15 * * * ?" # 4h K线
+  #   funding-rate-sync: "0 5 * * * ?"       # 资金费率
+  #   mid-freq-sync: "0 */30 * * * ?"        # 1h OI + 多空比
+  #   daily-oi-sync: "0 10 8 * * ?"          # 日线 OI
 
-  # 多空比采集配置 (period/limit 均可覆盖):
+  # 多空比采集:
   # lsr:
   #   enabled: true
   #   period: 1h
