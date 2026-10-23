@@ -291,9 +291,20 @@ public class JdbcDataStore {
             onboard_date=VALUES(onboard_date), delivery_date=VALUES(delivery_date), updated_at=VALUES(updated_at)
     """;
 
+    /** 不在最新交易列表中的合约写入的状态 (币安已下架/暂停/结算, 本服务只同步 TRADING 合约)。 */
+    public static final String STATUS_DELISTED = "DELISTED";
+
+    /**
+     * upsert 最新的在交易合约列表, 并把库中仍为 TRADING 但不在本次列表里的合约标记为 DELISTED
+     * (upsert 只更新本次返回的合约, 不处理则下架币永远停在 TRADING, ba-analysis 会一直分析它们)。
+     * 本批 upsert 共用同一 updated_at, 未被本批更新到的 TRADING 行即为下架。
+     * 本次列表不足库内 TRADING 数一半时视为异常响应, 只 upsert 不标记, 避免大面积误标。
+     */
     public void saveSymbols(List<com.ba.analyzer.model.SymbolInfo> symbols) {
         if (symbols == null || symbols.isEmpty()) return;
         long now = System.currentTimeMillis();
+        Integer tradingBefore = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM symbols WHERE status='TRADING'", Integer.class);
         List<Object[]> batch = new ArrayList<>();
         for (com.ba.analyzer.model.SymbolInfo s : symbols) {
             batch.add(new Object[]{s.getSymbol(), s.getPair(), s.getContractType(), s.getStatus(),
@@ -301,6 +312,16 @@ public class JdbcDataStore {
                     s.getOnboardDate(), s.getDeliveryDate(), now});
         }
         jdbc.batchUpdate(UPSERT_SYMBOL, batch);
+
+        if (tradingBefore != null && symbols.size() * 2 < tradingBefore) {
+            log.warn("Symbol list shrank from {} to {} TRADING, skipping delisting (possible partial response)",
+                    tradingBefore, symbols.size());
+            return;
+        }
+        int delisted = jdbc.update(
+                "UPDATE symbols SET status=? WHERE status='TRADING' AND (updated_at IS NULL OR updated_at <> ?)",
+                STATUS_DELISTED, now);
+        if (delisted > 0) log.info("Marked {} symbols as {} (no longer in TRADING list)", delisted, STATUS_DELISTED);
     }
 
     public List<com.ba.analyzer.model.SymbolInfo> getSymbols() {

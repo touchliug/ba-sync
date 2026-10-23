@@ -3,7 +3,7 @@
 从币安 USDT 永续合约 API 拉取数据并写入 MySQL。**只写库,不做分析。**
 
 ## 职责
-- 更新合约列表(`/fapi/v1/exchangeInfo`)→ `symbols.json`
+- 更新合约列表(`/fapi/v1/exchangeInfo`)→ `symbols` 表(下架币标 `DELISTED`)+ `data/symbols.json`(接口失败时的兜底,运行时生成,不进 git)
 - 同步 K 线(1d / 1h / 4h)、持仓量 OI(1d + 1h)、资金费率、24h 行情、标记价/溢价、多空比到 MySQL
 - 拥有数据库 schema:`JdbcDataStore` 启动时 `CREATE TABLE IF NOT EXISTS` 并做幂等迁移
 - 日线 OI / K线 / 资金费率 / 多空比每次 upsert、永不删除 → 序列随时间无限累积,突破币安 `openInterestHist` 的 30 天上限

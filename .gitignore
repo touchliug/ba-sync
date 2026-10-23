@@ -6,6 +6,8 @@ target/
 .vscode/
 result.json
 data/analyzer.db
+# 运行时由服务写入(启动时 + 每天 06:00 刷新), 不进版本库; 缺失时启动会自动从币安拉取生成
+data/symbols.json
 reports/
 # jar 外的真实环境配置(含DB密码), 只在部署机本地存在, 不进版本库; 模板见 config/application.yml.example
 /config/application.yml

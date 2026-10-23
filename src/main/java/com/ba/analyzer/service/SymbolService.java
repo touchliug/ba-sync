@@ -36,9 +36,17 @@ public class SymbolService {
         this.dataStore = dataStore;
     }
 
+    /**
+     * 从币安拉取在交易的 USDT 永续合约并写回文件与 DB。
+     * 拉取失败(空列表)时不写任何地方直接返回空: 文件是 API 失败时的兜底, 不能被空列表覆盖。
+     */
     public List<SymbolInfo> fetchAndSaveSymbols() {
         log.info("Fetching USDT futures symbols from Binance...");
         List<SymbolInfo> symbols = binanceClient.getUsdtFuturesSymbols();
+        if (symbols.isEmpty()) {
+            log.warn("Fetched 0 symbols from Binance, keeping existing symbol file and DB untouched");
+            return symbols;
+        }
         log.info("Fetched {} USDT perpetual futures symbols", symbols.size());
 
         saveSymbolsToFile(symbols);

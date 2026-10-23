@@ -41,6 +41,53 @@ class JdbcDataStoreTest {
                 && x.getOnboardDate() == 1600000000000L);
     }
 
+    private static com.ba.analyzer.model.SymbolInfo trading(String symbol) {
+        com.ba.analyzer.model.SymbolInfo s = new com.ba.analyzer.model.SymbolInfo();
+        s.setSymbol(symbol);
+        s.setContractType("PERPETUAL");
+        s.setStatus("TRADING");
+        s.setQuoteAsset("USDT");
+        return s;
+    }
+
+    private String statusOf(String symbol) {
+        return jdbc.queryForObject("SELECT status FROM symbols WHERE symbol=?", String.class, symbol);
+    }
+
+    /** 下架标记会作用于整张表: 测试库里若有非测试的 TRADING 合约则跳过, 避免误改。 */
+    private void onlyTestSymbolsTrading() {
+        jdbc.update("DELETE FROM symbols WHERE symbol LIKE 'TEST%'");
+        Integer others = jdbc.queryForObject("SELECT COUNT(*) FROM symbols WHERE status='TRADING'", Integer.class);
+        org.junit.jupiter.api.Assumptions.assumeTrue(others != null && others == 0,
+                "test DB holds non-test TRADING symbols, skipping");
+    }
+
+    @Test
+    void saveSymbols_marksMissingAsDelistedAndRelists() throws InterruptedException {
+        onlyTestSymbolsTrading();
+        store.saveSymbols(List.of(trading("TESTA"), trading("TESTB"), trading("TESTC")));
+        Thread.sleep(5);
+        store.saveSymbols(List.of(trading("TESTA"), trading("TESTB")));
+
+        assertThat(statusOf("TESTA")).isEqualTo("TRADING");
+        assertThat(statusOf("TESTC")).isEqualTo(JdbcDataStore.STATUS_DELISTED);
+
+        Thread.sleep(5);
+        store.saveSymbols(List.of(trading("TESTA"), trading("TESTB"), trading("TESTC")));
+        assertThat(statusOf("TESTC")).isEqualTo("TRADING");
+    }
+
+    @Test
+    void saveSymbols_skipsDelistingWhenListShrinksSharply() throws InterruptedException {
+        onlyTestSymbolsTrading();
+        store.saveSymbols(List.of(trading("TESTA"), trading("TESTB"), trading("TESTC"),
+                trading("TESTD"), trading("TESTE")));
+        Thread.sleep(5);
+        store.saveSymbols(List.of(trading("TESTA")));
+
+        assertThat(statusOf("TESTE")).isEqualTo("TRADING");
+    }
+
     @Test
     void saveAndGetTickers_roundTrip() {
         jdbc.execute("DELETE FROM ticker_24h WHERE symbol='TESTUSDT'");

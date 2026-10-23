@@ -62,10 +62,12 @@ public class SyncScheduler {
             List<String> symbols = symbolService.fetchAndSaveSymbols().stream()
                     .map(s -> s.getSymbol())
                     .toList();
-            synchronized (symbolsLock) {
-                cachedSymbols = symbols;
+            if (symbols.isEmpty()) {
+                // 拉取失败: 保留现有缓存, 否则当天所有同步任务对 0 个币空跑
+                log.warn("Symbol update returned empty, keeping {} cached symbols", cachedSymbols.size());
+                return;
             }
-            log.info("Updated {} symbols", symbols.size());
+            updateCachedSymbols(symbols);
         } catch (Exception e) {
             log.error("Failed to update symbols", e);
         }
