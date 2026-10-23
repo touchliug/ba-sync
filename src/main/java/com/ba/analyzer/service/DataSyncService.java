@@ -9,8 +9,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.List;
 import java.util.Map;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
+import java.util.Objects;
 
 /**
  * 数据同步服务 (ba-sync 专用) —— 从币安拉取并写回MySQL。
@@ -27,48 +26,47 @@ public class DataSyncService {
     private final BinanceClient binanceClient;
     private final JdbcDataStore dataStore;
 
-    public Map<String, List<KlineData>> fetchDailyKlines(List<String> symbols, int days) {
-        return fetchKlinesByInterval(symbols, "1d", days);
-    }
-
-    public Map<String, List<KlineData>> fetchKlinesByInterval(List<String> symbols, String interval, int period) {
-        Map<String, List<KlineData>> stored = dataStore.getKlinesBatch(symbols, interval, period + 1);
-        long intervalMs = intervalToMillis(interval);
-        long now = System.currentTimeMillis();
-        // 命中条件: 9成symbol已入库, 且每个已入库symbol的最新一根都够新(2个interval内)。
-        // 不再要求"每个symbol都满period根": 新上市币天然历史不足period, 强行要求会让单个新币
-        // 每轮都触发全量重拉, 旁路掉DB缓存。历史缺口的补齐交由启动期 DataInitializer 按symbol逐个判缺。
-        boolean hasEnoughData = stored.size() >= symbols.size() * 0.9
-                && stored.values().stream().allMatch(k -> {
-                    if (k.isEmpty()) return false;
-                    long latestOpenTime = k.get(k.size() - 1).getOpenTime();
-                    return now - latestOpenTime < intervalMs * 2;
-                });
-
-        if (hasEnoughData) {
-            log.info("DB hit for {} klines: {} symbols, {} periods", interval, stored.size(), period);
-            return trimKlinesByPeriod(stored, period);
-        }
-
-        log.info("Fetching {} klines from API for {} symbols, {} periods (stale or insufficient)", interval, symbols.size(), period);
-        ConcurrentMap<String, List<KlineData>> result = new ConcurrentHashMap<>();
-        binanceClient.executeConcurrent(symbols, symbol -> {
-            List<KlineData> klines = binanceClient.getKlines(symbol, interval, period + 1);
-            if (!klines.isEmpty()) {
-                result.put(symbol, klines);
-                dataStore.saveKlines(symbol, interval, klines);
-            }
-            return symbol;
-        });
-        log.info("Fetched and stored {} klines for {} symbols", interval, result.size());
-        // 与命中分支一致裁剪到 period (API拉的是 period+1)。
-        return trimKlinesByPeriod(result, period);
+    public void syncDailyKlines(List<String> symbols, int days) {
+        syncKlinesIfStale(symbols, "1d", days);
     }
 
     /**
-     * 强制刷新"当天/当前未收盘那根"K线, 跳过 fetchKlinesByInterval 的 DB 新鲜度判断。
+     * K 线历史不新鲜时从币安拉取并写回, 否则跳过 (调用方不消费数据, 只负责把库喂新)。
+     * 新鲜度判断用单条 MAX(open_time) GROUP BY 聚合查询, 替代原先逐 symbol 全量读行再丢弃
+     * (约500 symbol × 801根/轮的无效读)。
+     */
+    public void syncKlinesIfStale(List<String> symbols, String interval, int period) {
+        Map<String, Long> latest = dataStore.getLatestKlineOpenTimes(interval);
+        long intervalMs = intervalToMillis(interval);
+        long now = System.currentTimeMillis();
+        // 命中条件: 9成symbol已入库, 且每个已入库symbol的最新一根都够新(2个interval内)。
+        // 不要求"每个symbol都满period根": 新上市币天然历史不足period, 强行要求会让单个新币
+        // 每轮都触发全量重拉。历史缺口的补齐交由启动期 DataInitializer 按symbol逐个判缺。
+        long covered = symbols.stream().filter(latest::containsKey).count();
+        boolean hasEnoughData = covered >= symbols.size() * 0.9
+                && symbols.stream()
+                    .map(latest::get)
+                    .filter(Objects::nonNull)
+                    .allMatch(t -> now - t < intervalMs * 2);
+
+        if (hasEnoughData) {
+            log.info("DB hit for {} klines: {} symbols fresh", interval, covered);
+            return;
+        }
+
+        log.info("Fetching {} klines from API for {} symbols, {} periods (stale or insufficient)", interval, symbols.size(), period);
+        binanceClient.executeConcurrent(symbols, symbol -> {
+            List<KlineData> klines = binanceClient.getKlines(symbol, interval, period + 1);
+            if (!klines.isEmpty()) dataStore.saveKlines(symbol, interval, klines);
+            return symbol;
+        });
+        log.info("Fetched and stored {} klines for {} symbols", interval, symbols.size());
+    }
+
+    /**
+     * 强制刷新"当天/当前未收盘那根"K线, 跳过 syncKlinesIfStale 的 DB 新鲜度判断。
      *
-     * 背景: fetchKlinesByInterval 的命中条件 now - latestOpenTime < intervalMs*2 会把当天动态根
+     * 背景: syncKlinesIfStale 的命中条件 now - latestOpenTime < intervalMs*2 会把当天动态根
      * 也判成"够新→走缓存", 导致它在收盘前不被API刷新。下游需要当天实时K线, 故对最新2根
      * (上一根已收盘 + 当前动态根)做轻量强制拉取并 upsert 覆盖。每币种仅拉2根, 权重很低。
      */
@@ -133,30 +131,31 @@ public class DataSyncService {
     }
 
     /**
-     * 按指定周期(5m/1h/6h/1d等)批量获取OI历史并写回。
-     * 先读DB(对应period), 命中率达标且新鲜则直接返回; 否则从币安openInterestHist拉取并写回。
+     * OI 历史不新鲜时从币安 openInterestHist 拉取并写回, 否则跳过。
+     * 新鲜度判断同 syncKlinesIfStale: 单条 MAX(timestamp) 聚合查询, 不再全量读行。
+     * upsert + 永不删除 → 序列随时间无限累积(突破币安30天上限)。
      */
-    public Map<String, List<OpenInterestData>> fetchOiHistoryByPeriod(List<String> symbols, String period, int limit) {
-        Map<String, List<OpenInterestData>> stored = dataStore.getOpenInterestBatch(symbols, period, limit);
-        // 所有周期(含1d)都走新鲜度判断: 币安 openInterestHist 每次返回最近30天且按UTC零点对齐,
-        // 配合 upsert + 永不删除, 日线序列随时间无限累积(突破币安30天上限)。
-        boolean fresh = isOiFresh(stored, period);
-        if (stored.size() >= symbols.size() * 0.9 && fresh) {
-            log.info("DB hit for {} OI history batch: {} symbols", period, stored.size());
-            return stored;
+    public void syncOiHistoryIfStale(List<String> symbols, String period, int limit) {
+        Map<String, Long> latest = dataStore.getLatestOiTimestamps(period);
+        long periodMs = intervalToMillis(period);
+        long now = System.currentTimeMillis();
+        long covered = symbols.stream().filter(latest::containsKey).count();
+        boolean fresh = covered >= symbols.size() * 0.9
+                && symbols.stream()
+                    .map(latest::get)
+                    .filter(Objects::nonNull)
+                    .allMatch(t -> now - t < periodMs * 3);
+        if (fresh) {
+            log.info("DB hit for {} OI history: {} symbols fresh", period, covered);
+            return;
         }
         log.info("Fetching {} OI history from API for {} symbols, {} periods", period, symbols.size(), limit);
-        ConcurrentMap<String, List<OpenInterestData>> result = new ConcurrentHashMap<>();
         binanceClient.executeConcurrent(symbols, symbol -> {
             List<OpenInterestData> oiHistory = binanceClient.getOpenInterestHistory(symbol, period, limit);
-            if (!oiHistory.isEmpty()) {
-                result.put(symbol, oiHistory);
-                dataStore.saveOpenInterest(symbol, period, oiHistory);
-            }
+            if (!oiHistory.isEmpty()) dataStore.saveOpenInterest(symbol, period, oiHistory);
             return symbol;
         });
-        log.info("Fetched and stored {} OI history for {} symbols", period, result.size());
-        return result;
+        log.info("Fetched and stored {} OI history for {} symbols", period, symbols.size());
     }
 
     // ======================== 强制补数据 (供启动校验, 跳过命中率/新鲜度启发式) ========================
@@ -205,18 +204,6 @@ public class DataSyncService {
         });
     }
 
-    private boolean isOiFresh(Map<String, List<OpenInterestData>> stored, String period) {
-        if (stored.isEmpty()) return false;
-        long periodMs = intervalToMillis(period);
-        long now = System.currentTimeMillis();
-        return stored.values().stream().allMatch(list -> {
-            if (list.isEmpty()) return false;
-            OpenInterestData latest = list.get(list.size() - 1);
-            long ts = latest.getTimestamp() > 0 ? latest.getTimestamp() : latest.getTime();
-            return now - ts < periodMs * 3;
-        });
-    }
-
     private long intervalToMillis(String interval) {
         return switch (interval) {
             case "1m" -> 60_000L;
@@ -233,18 +220,5 @@ public class DataSyncService {
             case "1d" -> 86_400_000L;
             default -> 86_400_000L;
         };
-    }
-
-    private Map<String, List<KlineData>> trimKlinesByPeriod(Map<String, List<KlineData>> klineMap, int period) {
-        Map<String, List<KlineData>> result = new ConcurrentHashMap<>();
-        for (Map.Entry<String, List<KlineData>> entry : klineMap.entrySet()) {
-            List<KlineData> klines = entry.getValue();
-            if (klines.size() <= period) {
-                result.put(entry.getKey(), klines);
-            } else {
-                result.put(entry.getKey(), klines.subList(klines.size() - period, klines.size()));
-            }
-        }
-        return result;
     }
 }

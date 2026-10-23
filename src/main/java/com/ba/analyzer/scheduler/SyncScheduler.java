@@ -43,7 +43,7 @@ public class SyncScheduler {
         try {
             List<String> symbols = getSymbols();
             // 30 = 币安 openInterestHist?period=1d 单次最大返回天数; upsert 永不删除 → 序列累积。
-            // 用 backfillOi(无条件拉) 而非 fetchOiHistoryByPeriod: 后者带3天新鲜度门槛, 稳态下会
+            // 用 backfillOi(无条件拉) 而非 syncOiHistoryIfStale: 后者带3天新鲜度门槛, 稳态下会
             // 把"今天的00:00快照"判成够新而跳过, 导致最新日OI点滞后1~3天。本任务一天仅一次、幂等,
             // 无需省配额, 每天直接拉确保当天00:00 UTC快照入库 (实测1d点定格日界、值盘中不滚动)。
             log.info("Daily OI sync: {} symbols", symbols.size());
@@ -75,11 +75,11 @@ public class SyncScheduler {
         try {
             List<String> symbols = getSymbols();
             int days = dailyDays();
-            dataSyncService.fetchDailyKlines(symbols, days);
+            dataSyncService.syncDailyKlines(symbols, days);
             // 历史序列走缓存省配额, 但当天日线那根是动态的: 强制刷新最新2根, 保证下游拿到实时值。
             dataSyncService.refreshCurrentKline(symbols, "1d");
             for (String interval : INTRADAY_INTERVALS) {
-                dataSyncService.fetchKlinesByInterval(symbols, interval, KLINE_HISTORY_BARS);
+                dataSyncService.syncKlinesIfStale(symbols, interval, KLINE_HISTORY_BARS);
                 dataSyncService.refreshCurrentKline(symbols, interval);
             }
             dataSyncService.syncFundingRates(symbols);
@@ -97,7 +97,7 @@ public class SyncScheduler {
             List<String> symbols = getSymbols();
             log.info("Mid-freq sync: 1h OI + long/short ratio, {} symbols", symbols.size());
             // 1h OI: 拉最近若干点 upsert 累积 (单次上限500, 取200≈8天覆盖更新窗口足够)。
-            dataSyncService.fetchOiHistoryByPeriod(symbols, "1h", 200);
+            dataSyncService.syncOiHistoryIfStale(symbols, "1h", 200);
             var lsr = appProperties.getLsr();
             if (lsr.isEnabled()) {
                 dataSyncService.syncLongShortRatio(symbols, lsr.getPeriod(), lsr.getLimit());

@@ -84,6 +84,33 @@ class JdbcDataStoreTest {
     }
 
     @Test
+    void latestKlineOpenTimes_returnsMaxPerSymbol() {
+        KlineData k1 = new KlineData();
+        k1.setOpenTime(1700000000000L);
+        KlineData k2 = new KlineData();
+        k2.setOpenTime(1700003600000L);
+        store.saveKlines("TESTUSDT", "1h", List.of(k1, k2));
+
+        var latest = store.getLatestKlineOpenTimes("1h");
+
+        assertThat(latest).containsEntry("TESTUSDT", 1700003600000L);
+    }
+
+    @Test
+    void latestOiTimestamps_returnsMaxPerSymbol() {
+        jdbc.execute("DELETE FROM open_interest WHERE symbol='TESTUSDT'");
+        com.ba.analyzer.model.OpenInterestData o1 = new com.ba.analyzer.model.OpenInterestData();
+        o1.setTimestamp(1700000000000L);
+        com.ba.analyzer.model.OpenInterestData o2 = new com.ba.analyzer.model.OpenInterestData();
+        o2.setTimestamp(1700003600000L);
+        store.saveOpenInterest("TESTUSDT", "1h", List.of(o1, o2));
+
+        var latest = store.getLatestOiTimestamps("1h");
+
+        assertThat(latest).containsEntry("TESTUSDT", 1700003600000L);
+    }
+
+    @Test
     void saveAndGetKlines_roundTrip() {
         // 用 no-arg + setter: KlineData 的 @AllArgsConstructor 还含 6 个 transient 缓存字段, 不用它。
         KlineData k = new KlineData();

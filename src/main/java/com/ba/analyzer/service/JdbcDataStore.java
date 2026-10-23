@@ -203,13 +203,15 @@ public class JdbcDataStore {
         return result;
     }
 
-    public Map<String, List<KlineData>> getKlinesBatch(List<String> symbols, String interval, int limit) {
-        Map<String, List<KlineData>> result = new HashMap<>();
-        for (String symbol : symbols) {
-            List<KlineData> klines = getKlines(symbol, interval, limit);
-            if (!klines.isEmpty()) result.put(symbol, klines);
-        }
-        return result;
+    /**
+     * 每个 symbol 在该 interval 下最新一根 K 线的 open_time。
+     * 供新鲜度判断用: 单条聚合查询替代逐 symbol 全量读行再丢弃 (原 getKlinesBatch 路径)。
+     */
+    public Map<String, Long> getLatestKlineOpenTimes(String interval) {
+        Map<String, Long> latest = new HashMap<>();
+        jdbc.query("SELECT symbol, MAX(open_time) t FROM klines WHERE `interval`=? GROUP BY symbol",
+                (RowCallbackHandler) rs -> latest.put(rs.getString("symbol"), rs.getLong("t")), interval);
+        return latest;
     }
 
     // ======================== Open Interest CRUD ========================
@@ -223,11 +225,6 @@ public class JdbcDataStore {
             sum_open_interest_value=VALUES(sum_open_interest_value)
     """;
 
-    /** 保存日线OI (向后兼容, period='1d')。 */
-    public void saveOpenInterest(String symbol, List<OpenInterestData> dataList) {
-        saveOpenInterest(symbol, "1d", dataList);
-    }
-
     public void saveOpenInterest(String symbol, String period, List<OpenInterestData> dataList) {
         if (dataList == null || dataList.isEmpty()) return;
         List<Object[]> batch = new ArrayList<>();
@@ -239,11 +236,6 @@ public class JdbcDataStore {
         jdbc.batchUpdate(UPSERT_OI, batch);
     }
 
-    /** 读取日线OI历史 (向后兼容, period='1d')。 */
-    public List<OpenInterestData> getOpenInterestHistory(String symbol, int limit) {
-        return getOpenInterestHistory(symbol, "1d", limit);
-    }
-
     public List<OpenInterestData> getOpenInterestHistory(String symbol, String period, int limit) {
         String sql = "SELECT * FROM open_interest WHERE symbol=? AND period=? ORDER BY `timestamp` DESC LIMIT ?";
         List<OpenInterestData> result = jdbc.query(sql, this::mapOi, symbol, period, limit);
@@ -251,18 +243,12 @@ public class JdbcDataStore {
         return result;
     }
 
-    /** 批量读取日线OI (向后兼容, period='1d')。 */
-    public Map<String, List<OpenInterestData>> getOpenInterestBatch(List<String> symbols, int days) {
-        return getOpenInterestBatch(symbols, "1d", days);
-    }
-
-    public Map<String, List<OpenInterestData>> getOpenInterestBatch(List<String> symbols, String period, int limit) {
-        Map<String, List<OpenInterestData>> result = new HashMap<>();
-        for (String symbol : symbols) {
-            List<OpenInterestData> oi = getOpenInterestHistory(symbol, period, limit);
-            if (!oi.isEmpty()) result.put(symbol, oi);
-        }
-        return result;
+    /** 每个 symbol 在该 period 下最新一个 OI 点的 timestamp (轻量新鲜度检查, 同 getLatestKlineOpenTimes)。 */
+    public Map<String, Long> getLatestOiTimestamps(String period) {
+        Map<String, Long> latest = new HashMap<>();
+        jdbc.query("SELECT symbol, MAX(`timestamp`) t FROM open_interest WHERE period=? GROUP BY symbol",
+                (RowCallbackHandler) rs -> latest.put(rs.getString("symbol"), rs.getLong("t")), period);
+        return latest;
     }
 
     // ======================== Funding Rate CRUD ========================
