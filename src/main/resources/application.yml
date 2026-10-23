@@ -10,7 +10,9 @@ spring:
     # 环境相关项(url/username/password)请放到 jar 外的 config/application.yml 覆盖,
     # 见 config/application.yml.example。此处仅留本地默认值; 密码默认空 → 必须由外部配置
     # 或环境变量 DB_PASSWORD 提供, 避免明文密钥进 jar / git。
-    url: jdbc:mysql://127.0.0.1:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai
+    # rewriteBatchedStatements=true: 让 JDBC batchUpdate 真正合并成多值 INSERT 一次发送,
+    # 否则 MySQL 驱动逐行发网络包, upsert 批量写退化为 N 次往返。
+    url: jdbc:mysql://127.0.0.1:3306/ba?useSSL=false&allowPublicKeyRetrieval=true&serverTimezone=Asia/Shanghai&rewriteBatchedStatements=true
     username: root
     password: ${DB_PASSWORD:}
     driver-class-name: com.mysql.cj.jdbc.Driver

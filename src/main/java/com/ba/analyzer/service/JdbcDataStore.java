@@ -40,8 +40,7 @@ public class JdbcDataStore {
                 number_of_trades INT,
                 taker_buy_base VARCHAR(50),
                 taker_buy_quote VARCHAR(50),
-                PRIMARY KEY (symbol, `interval`, open_time),
-                INDEX idx_klines_lookup (symbol, `interval`, open_time DESC)
+                PRIMARY KEY (symbol, `interval`, open_time)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
         jdbc.execute("""
@@ -49,8 +48,7 @@ public class JdbcDataStore {
                 symbol VARCHAR(20) NOT NULL,
                 funding_time BIGINT NOT NULL,
                 funding_rate VARCHAR(50),
-                PRIMARY KEY (symbol, funding_time),
-                INDEX idx_fr_lookup (symbol, funding_time DESC)
+                PRIMARY KEY (symbol, funding_time)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
         jdbc.execute("""
@@ -61,8 +59,7 @@ public class JdbcDataStore {
                 open_interest VARCHAR(50),
                 sum_open_interest VARCHAR(50),
                 sum_open_interest_value VARCHAR(50),
-                PRIMARY KEY (symbol, period, `timestamp`),
-                INDEX idx_oi_lookup (symbol, period, `timestamp` DESC)
+                PRIMARY KEY (symbol, period, `timestamp`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
         jdbc.execute("""
@@ -121,12 +118,35 @@ public class JdbcDataStore {
                 long_short_ratio VARCHAR(30),
                 long_value VARCHAR(30),
                 short_value VARCHAR(30),
-                PRIMARY KEY (symbol, ratio_type, period, `timestamp`),
-                INDEX idx_lsr_lookup (symbol, ratio_type, period, `timestamp` DESC)
+                PRIMARY KEY (symbol, ratio_type, period, `timestamp`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
         migrateOpenInterestPeriod();
+        dropRedundantIndexes();
         log.info("MySQL tables ready");
+    }
+
+    /**
+     * 幂等迁移: 删除与主键完全同列的冗余二级索引 (InnoDB 主键即聚簇索引且支持反向扫描,
+     * 这些索引只带来磁盘占用和 upsert 写放大)。新建表已不再创建, 此处清理存量部署。
+     */
+    private void dropRedundantIndexes() {
+        record Idx(String table, String index) {}
+        List<Idx> redundant = List.of(
+                new Idx("klines", "idx_klines_lookup"),
+                new Idx("funding_rate", "idx_fr_lookup"),
+                new Idx("open_interest", "idx_oi_lookup"),
+                new Idx("long_short_ratio", "idx_lsr_lookup"));
+        for (Idx i : redundant) {
+            Integer exists = jdbc.queryForObject("""
+                SELECT COUNT(*) FROM information_schema.STATISTICS
+                WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?
+            """, Integer.class, i.table(), i.index());
+            if (exists != null && exists > 0) {
+                log.info("Dropping redundant index {}.{} (duplicates primary key)", i.table(), i.index());
+                jdbc.execute("ALTER TABLE " + i.table() + " DROP INDEX " + i.index());
+            }
+        }
     }
 
     /**
@@ -145,11 +165,6 @@ public class JdbcDataStore {
         log.info("Migrating open_interest: adding period column and rebuilding primary key");
         jdbc.execute("ALTER TABLE open_interest ADD COLUMN period VARCHAR(10) NOT NULL DEFAULT '1d'");
         jdbc.execute("ALTER TABLE open_interest DROP PRIMARY KEY, ADD PRIMARY KEY (symbol, period, `timestamp`)");
-        try {
-            jdbc.execute("ALTER TABLE open_interest ADD INDEX idx_oi_lookup (symbol, period, `timestamp` DESC)");
-        } catch (Exception e) {
-            log.warn("idx_oi_lookup may already exist, skipping: {}", e.getMessage());
-        }
         log.info("open_interest migration done (existing rows defaulted to period='1d')");
     }
 
