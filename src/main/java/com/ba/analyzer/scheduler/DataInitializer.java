@@ -45,6 +45,14 @@ public class DataInitializer {
     private static final long DAY_MS = 86_400_000L;
     private static final long HOUR_MS = 3_600_000L;
 
+    /**
+     * 币安 openInterestHist 只保留最近 30 天, 且按**服务器时钟**校验 startTime。
+     * 本地 now 取样到请求真正到达, 中间隔着线程错峰(100ms×序号)、重试与网络 RTT,
+     * 所以窗口取满 30 天必越界(实测稳定 400)。留 2 小时余量。
+     */
+    private static final long OI_MAX_WINDOW_MS = 30 * DAY_MS;
+    private static final long OI_WINDOW_MARGIN_MS = 2 * HOUR_MS;
+
     private final SymbolService symbolService;
     private final AppProperties appProperties;
     private final JdbcDataStore dataStore;
@@ -127,12 +135,22 @@ public class DataInitializer {
 
     /** 1h OI: 按窗口内点数判缺, 分页补 (单次上限500)。 */
     private void backfillHourlyOi(List<String> symbols, int days, long now) {
-        long sinceMs = now - (long) days * DAY_MS;
+        long sinceMs = oiWindowStart(now, days);
         int expected = days * 24;
         int minPts = (int) (expected * 0.9);
         List<String> miss = findMissing(symbols, dataStore.countOpenInterestSince("1h", sinceMs), minPts);
         log.info("Hourly OI gap — {} symbols (window {}d, need {}/{})", miss.size(), days, minPts, expected);
         dataSyncService.backfillOiRange(miss, "1h", sinceMs, now);
+    }
+
+    /**
+     * OI 查询窗口起点: 既不超过配置的天数, 也不越过币安 30 天上限(留余量)。
+     * 例: days=30 时返回 now-30d+2h, 而不是 now-30d —— 后者在请求到达时必然越界。
+     */
+    static long oiWindowStart(long now, int days) {
+        long wanted = now - (long) days * DAY_MS;
+        long floor = now - OI_MAX_WINDOW_MS + OI_WINDOW_MARGIN_MS;
+        return Math.max(wanted, floor);
     }
 
     /** 返回记录数不足 minCount(或完全缺失)的 symbol 列表。 */

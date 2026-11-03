@@ -332,7 +332,15 @@ public class BinanceClient {
                     continue;
                 }
                 if (!response.isSuccessful() || response.body() == null) {
-                    log.error("Request failed: {} - status: {}", url, response.code());
+                    // 币安的 4xx 把真正原因放在 body 里(如 {"code":-1130,"msg":"..."}), 只打 status
+                    // 会把唯一线索丢掉 —— 排查时无法区分"参数非法 / 时间窗越界 / 符号不存在"。
+                    String detail = "";
+                    try {
+                        if (response.body() != null) detail = abbreviate(response.body().string(), 200);
+                    } catch (Exception ignored) {
+                        // body 已被消费或不可读: 保持空串, 不影响返回
+                    }
+                    log.error("Request failed: {} - status: {} body: {}", url, response.code(), detail);
                     return "";
                 }
                 return response.body().string();
@@ -421,6 +429,13 @@ public class BinanceClient {
     private int toInt(Object obj) {
         if (obj instanceof Number) return ((Number) obj).intValue();
         return Integer.parseInt(obj.toString());
+    }
+
+    /** 截断过长的响应体, 只保留排查所需的头部。 */
+    private static String abbreviate(String s, int max) {
+        if (s == null) return "";
+        String oneLine = s.replaceAll("\\s+", " ").trim();
+        return oneLine.length() <= max ? oneLine : oneLine.substring(0, max) + "...";
     }
 
     private long periodToMillis(String period) {
