@@ -21,6 +21,33 @@ public class AppProperties {
     private SymbolConfig symbol = new SymbolConfig();
     private InitConfig init = new InitConfig();
     private LsrConfig lsr = new LsrConfig();
+    private RetentionConfig retention = new RetentionConfig();
+
+    /**
+     * 下架币定时清理。
+     *
+     * <p>三道安全阀：宽限期（防状态误判）、单次上限（防批量误删）、先归档再删（币安下架后数据拉不回来）。
+     */
+    @Data
+    public static class RetentionConfig {
+        /** 总开关。 */
+        private boolean enabled = true;
+        /** 默认为凌晨 4:30，避开 06:00 合约列表更新与 08:10 日线 OI 同步。 */
+        private String cron = "0 30 4 * * ?";
+        /** 下架满多少天才允许清理；给状态误判留出人工发现与回滚的窗口。 */
+        @Min(1)
+        private int delistedGraceDays = 7;
+        /** 单次最多清理几个币，超过则整体中止（防止某次 exchangeInfo 异常导致大批误标后清库）。 */
+        @Min(1)
+        private int maxSymbolsPerRun = 20;
+        /** 归档目录（相对 start.sh 所在目录）。 */
+        private String backupDir = "./archive";
+        /** 归档保留天数，超期自动删除。 */
+        @Min(1)
+        private int backupKeepDays = 90;
+        /** 是否连 symbols 行一起删除；false 则只清历史数据、保留元信息。 */
+        private boolean deleteSymbolsRow = true;
+    }
 
     @Data
     public static class InitConfig {

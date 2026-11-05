@@ -64,3 +64,14 @@ binance:
     daily-oi-sync: "0 10 8 * * ?"
     # 中频: 1h OI + 多空比 (吃 /futures/data 次数桶, 故 30 分钟一轮, 不进高频)
     mid-freq-sync: "0 */30 * * * ?"
+
+  # 下架币定时清理: 每天删掉已下架币的全部数据。
+  # 三道安全阀: 宽限期(防误判) / 单次上限(防批量误删) / 先归档再删(币安下架后数据拉不回来)。
+  retention:
+    enabled: true
+    cron: "0 30 4 * * ?"        # 凌晨 4:30, 避开 06:00 合约更新与 08:10 日线 OI
+    delisted-grace-days: 7      # 下架满 7 天才删
+    max-symbols-per-run: 20     # 单次超过 20 个直接中止
+    backup-dir: ./archive
+    backup-keep-days: 90
+    delete-symbols-row: true    # symbols 行也一起删

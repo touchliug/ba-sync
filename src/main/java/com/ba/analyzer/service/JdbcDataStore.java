@@ -26,6 +26,15 @@ public class JdbcDataStore {
     @PostConstruct
     public void init() {
         jdbc.execute("""
+            CREATE TABLE IF NOT EXISTS purge_log (
+                symbol VARCHAR(20) NOT NULL,
+                rows_deleted BIGINT NOT NULL,
+                backup_file VARCHAR(255),
+                purged_at BIGINT NOT NULL,
+                PRIMARY KEY (symbol, purged_at)
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
+        """);
+        jdbc.execute("""
             CREATE TABLE IF NOT EXISTS klines (
                 symbol VARCHAR(20) NOT NULL,
                 `interval` VARCHAR(10) NOT NULL,
@@ -122,6 +131,7 @@ public class JdbcDataStore {
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4
         """);
         migrateOpenInterestPeriod();
+        migrateSymbolsDelistedAt();
         dropRedundantIndexes();
         log.info("MySQL tables ready");
     }
@@ -283,12 +293,13 @@ public class JdbcDataStore {
 
     private static final String UPSERT_SYMBOL = """
         INSERT INTO symbols (symbol, pair, contract_type, status, base_asset, quote_asset,
-            price_precision, quantity_precision, onboard_date, delivery_date, updated_at)
-        VALUES (?,?,?,?,?,?,?,?,?,?,?)
+            price_precision, quantity_precision, onboard_date, delivery_date, updated_at, delisted_at)
+        VALUES (?,?,?,?,?,?,?,?,?,?,?,NULL)
         ON DUPLICATE KEY UPDATE pair=VALUES(pair), contract_type=VALUES(contract_type),
             status=VALUES(status), base_asset=VALUES(base_asset), quote_asset=VALUES(quote_asset),
             price_precision=VALUES(price_precision), quantity_precision=VALUES(quantity_precision),
-            onboard_date=VALUES(onboard_date), delivery_date=VALUES(delivery_date), updated_at=VALUES(updated_at)
+            onboard_date=VALUES(onboard_date), delivery_date=VALUES(delivery_date), updated_at=VALUES(updated_at),
+            delisted_at=NULL
     """;
 
     /** 不在最新交易列表中的合约写入的状态 (币安已下架/暂停/结算, 本服务只同步 TRADING 合约)。 */
@@ -319,9 +330,87 @@ public class JdbcDataStore {
             return;
         }
         int delisted = jdbc.update(
-                "UPDATE symbols SET status=? WHERE status='TRADING' AND (updated_at IS NULL OR updated_at <> ?)",
-                STATUS_DELISTED, now);
+                "UPDATE symbols SET status=?, delisted_at=? WHERE status='TRADING' AND (updated_at IS NULL OR updated_at <> ?)",
+                STATUS_DELISTED, now, now);
         if (delisted > 0) log.info("Marked {} symbols as {} (no longer in TRADING list)", delisted, STATUS_DELISTED);
+    }
+
+    // ======================== 下架币清理 ========================
+
+    /** 需要清理的历史表（不含 symbols，是否删表行由调用方决定）。 */
+    private static final String[] HISTORY_TABLES = {
+            "klines", "open_interest", "long_short_ratio", "funding_rate", "ticker_24h", "premium_index"
+    };
+
+    /** 满足宽限期的候选币数（用于上限保护判断）。 */
+    public int countPurgeCandidates(long cutoffMs) {
+        Integer n = jdbc.queryForObject(
+                "SELECT COUNT(*) FROM symbols WHERE status=? AND delisted_at IS NOT NULL AND delisted_at <= ?",
+                Integer.class, STATUS_DELISTED, cutoffMs);
+        return n == null ? 0 : n;
+    }
+
+    /** 满足宽限期的候选币，按标记时间升序（先下架的先删）。 */
+    public List<String> listPurgeCandidates(long cutoffMs, int limit) {
+        return jdbc.queryForList(
+                "SELECT symbol FROM symbols WHERE status=? AND delisted_at IS NOT NULL AND delisted_at <= ? "
+                + "ORDER BY delisted_at LIMIT ?",
+                String.class, STATUS_DELISTED, cutoffMs, limit);
+    }
+
+    /** 该币在各历史表里的行数。 */
+    public Map<String, Long> countSymbolRows(String symbol) {
+        Map<String, Long> out = new LinkedHashMap<>();
+        for (String t : HISTORY_TABLES) {
+            Long n = jdbc.queryForObject("SELECT COUNT(*) FROM " + t + " WHERE symbol=?", Long.class, symbol);
+            out.put(t, n == null ? 0 : n);
+        }
+        return out;
+    }
+
+    /** 删除一个币的全部数据；调用方负责事务边界。返回删除行数。 */
+    public long deleteSymbolData(String symbol, boolean deleteSymbolRow) {
+        long total = 0;
+        for (String t : HISTORY_TABLES) {
+            total += jdbc.update("DELETE FROM " + t + " WHERE symbol=?", symbol);
+        }
+        if (deleteSymbolRow) {
+            total += jdbc.update("DELETE FROM symbols WHERE symbol=?", symbol);
+        }
+        return total;
+    }
+
+    public void insertPurgeLog(String symbol, long rows, String backupFile) {
+        jdbc.update("INSERT INTO purge_log (symbol, rows_deleted, backup_file, purged_at) VALUES (?,?,?,?)",
+                symbol, rows, backupFile, System.currentTimeMillis());
+    }
+
+    /** 通用原始行读取，仅供归档导出使用（table 由 RetentionService 的内部常量传入，不接受外部输入）。 */
+    public List<Map<String, Object>> rawRows(String table, String symbol) {
+        return jdbc.queryForList("SELECT * FROM " + table + " WHERE symbol=?", symbol);
+    }
+
+    public List<Map<String, Object>> recentPurges(int limit) {
+        return jdbc.queryForList(
+                "SELECT symbol, rows_deleted, backup_file, purged_at FROM purge_log ORDER BY purged_at DESC LIMIT ?",
+                limit);
+    }
+
+    /**
+     * 幂等迁移：symbols 增加 delisted_at。
+     * 存量 DELISTED 行回填为当前时间 —— 等价于「从现在开始宽限」，避免升级后立刻被清理。
+     */
+    private void migrateSymbolsDelistedAt() {
+        Integer has = jdbc.queryForObject("""
+            SELECT COUNT(*) FROM information_schema.COLUMNS
+            WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = 'symbols' AND COLUMN_NAME = 'delisted_at'
+        """, Integer.class);
+        if (has != null && has > 0) return;
+        log.info("Migrating symbols: adding delisted_at column");
+        jdbc.execute("ALTER TABLE symbols ADD COLUMN delisted_at BIGINT NULL");
+        int n = jdbc.update("UPDATE symbols SET delisted_at=? WHERE status=? AND delisted_at IS NULL",
+                System.currentTimeMillis(), STATUS_DELISTED);
+        log.info("symbols.delisted_at migration done, backfilled {} existing DELISTED rows", n);
     }
 
     public List<com.ba.analyzer.model.SymbolInfo> getSymbols() {
