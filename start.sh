@@ -33,12 +33,21 @@ stop() {
   local pid; pid=$(pid_of)
   if [ -z "$pid" ]; then echo "未在运行。"; return; fi
   kill "$pid"; echo "已发送停止信号 (PID $pid)。"
+  # 必须等进程真正退出: 否则 restart 会立刻进 start, 而 start 看到旧 PID 仍存活
+  # 就判定"已在运行"直接跳过, 结果既没重启成功、服务也停着。
+  for _ in $(seq 1 30); do
+    kill -0 "$pid" 2>/dev/null || { echo "已停止。"; return; }
+    sleep 1
+  done
+  echo "30s 未退出, 强制终止。"
+  kill -9 "$pid" 2>/dev/null || true
+  sleep 1
 }
 
 case "${1:-start}" in
   start)   start ;;
   stop)    stop ;;
-  restart) stop; sleep 2; start ;;
+  restart) stop; start ;;
   status)  pid=$(pid_of); [ -n "$pid" ] && echo "运行中 (PID $pid)" || echo "未运行" ;;
   log)     tail -f "$LOG" ;;
   *)       echo "用法: $0 [start|stop|restart|status|log]"; exit 1 ;;
